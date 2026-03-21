@@ -396,13 +396,13 @@ async def reset_cancel(callback_query: types.CallbackQuery):
     await callback_query.message.edit_text("❌ Сброс отменён.")
     await callback_query.answer()
     await callback_query.message.answer("Главное меню", reply_markup=get_main_menu())
-
 # ========== ЗАПУСК ==========
+from web import start_web
+
 async def on_startup(dp):
-    # Запускаем веб-сервер в фоновом режиме
-    import web
-    asyncio.create_task(web.start_web())
+    start_web()
     print("🤖 Бот запущен!")
 
 if __name__ == "__main__":
+    from aiogram.utils import executor
     executor.start_polling(dp, on_startup=on_startup)
