@@ -35,6 +35,8 @@ class Database:
     def set_user_timezone(self, user_id, timezone_offset):
         """Сохраняет смещение часового пояса пользователя (в часах от UTC)"""
         user_folder = self._get_user_folder(user_id)
+        if not os.path.exists(user_folder):
+            os.makedirs(user_folder)
         file_path = os.path.join(user_folder, "user_settings.json")
         settings = {}
         if os.path.exists(file_path):
