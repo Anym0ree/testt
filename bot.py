@@ -57,14 +57,15 @@ async def cmd_start(message: types.Message):
     await message.answer(
         "👋 Привет! Я твой личный дневник-трекер.\n\n"
         "Что я умею:\n"
-        "• 🛌 Записывать сон\n"
+        "• 🛌 Записывать сон (один раз в день)\n"
         "• ⚡️ Делать чек-ины (энергия, стресс, эмоции)\n"
         "• 🍽 Записывать еду и напитки\n"
         "• 💭 Сохранять мысли\n"
-        "• 📊 Показывать статистику\n"
-        "• 📤 Экспортировать все данные\n\n"
+        "• 📝 Итог дня (только после 18:00, один раз в день)\n"
+        "• 📊 Статистика\n"
+        "• 📤 Экспорт\n\n"
         "Главное меню — /menu\n"
-        "Посмотреть мысли — /thoughts",
+        "Посмотреть мысли — /thoughts или кнопка",
         reply_markup=get_main_menu()
     )
 
@@ -86,7 +87,6 @@ async def cmd_thoughts(message: types.Message):
 
     text = "💭 *Твои мысли (последние 10):*\n\n"
     for i, thought in enumerate(reversed(thoughts)):
-        idx = len(thoughts) - 1 - i  # индекс в исходном списке
         text += f"{i+1}. *{thought['thought_type']}*: {thought['thought_text']}\n"
         text += f"   📅 {thought['date']} {thought['time']} | Действие: {thought['action']}\n\n"
 
@@ -95,6 +95,9 @@ async def cmd_thoughts(message: types.Message):
 # ========== СОН ==========
 @dp.message_handler(text="🛌 Сон")
 async def sleep_start(message: types.Message):
+    if db.has_sleep_today(message.from_user.id):
+        await message.answer("❌ Ты уже записал сон сегодня. Сон можно записывать только один раз в день.", reply_markup=get_main_menu())
+        return
     await SleepStates.bed_time.set()
     await message.answer("🛌 Во сколько лег?", reply_markup=get_time_buttons())
 
@@ -164,7 +167,7 @@ async def sleep_note(message: types.Message, state: FSMContext):
         return
     data = await state.get_data()
     note = message.text if message.text != "Пропустить" else ""
-    db.add_sleep(
+    success = db.add_sleep(
         message.from_user.id,
         data["bed_time"],
         data["wake_time"],
@@ -172,7 +175,10 @@ async def sleep_note(message: types.Message, state: FSMContext):
         data["woke_night"],
         note
     )
-    await message.answer("✅ Сон сохранен!", reply_markup=get_main_menu())
+    if success:
+        await message.answer("✅ Сон сохранен!", reply_markup=get_main_menu())
+    else:
+        await message.answer("❌ Не удалось сохранить сон. Возможно, он уже был записан сегодня.", reply_markup=get_main_menu())
     await state.finish()
 
 # ========== ЧЕК-ИН ==========
@@ -270,6 +276,12 @@ async def checkin_note(message: types.Message, state: FSMContext):
 # ========== ИТОГ ДНЯ ==========
 @dp.message_handler(text="📝 Итог дня")
 async def summary_start(message: types.Message):
+    if datetime.now().hour < 18:
+        await message.answer("📝 Итог дня можно подвести только после 18:00.", reply_markup=get_main_menu())
+        return
+    if db.has_day_summary_today(message.from_user.id):
+        await message.answer("❌ Ты уже записал итог дня сегодня. Итог дня можно записывать только один раз.", reply_markup=get_main_menu())
+        return
     await DaySummaryStates.score.set()
     await message.answer("📝 Оценка дня? (1-10)", reply_markup=get_energy_stress_buttons())
 
@@ -324,8 +336,11 @@ async def summary_note(message: types.Message, state: FSMContext):
         return
     data = await state.get_data()
     note = message.text if message.text != "Пропустить" else ""
-    db.add_day_summary(message.from_user.id, data["score"], data["best"], data["worst"], data["gratitude"], note)
-    await message.answer("✅ Итог дня сохранен!", reply_markup=get_main_menu())
+    success = db.add_day_summary(message.from_user.id, data["score"], data["best"], data["worst"], data["gratitude"], note)
+    if success:
+        await message.answer("✅ Итог дня сохранен!", reply_markup=get_main_menu())
+    else:
+        await message.answer("❌ Не удалось сохранить итог дня. Возможно, уже есть запись за сегодня или ещё не наступило 18:00.", reply_markup=get_main_menu())
     await state.finish()
 
 # ========== ЕДА ==========
@@ -397,10 +412,6 @@ async def drink_amount_custom(message: types.Message, state: FSMContext):
 async def thought_start(message: types.Message):
     await ThoughtStates.thought_text.set()
     await message.answer("Какая мысль?", reply_markup=get_main_menu())
-@dp.message_handler(text="💭 Мысли")
-async def thought_start(message: types.Message):
-    await ThoughtStates.thought_text.set()
-    await message.answer("Какая мысль?", reply_markup=get_main_menu())
 
 @dp.message_handler(state=ThoughtStates.thought_text)
 async def thought_text(message: types.Message, state: FSMContext):
@@ -425,6 +436,11 @@ async def thought_action(message: types.Message, state: FSMContext):
     await message.answer("✅ Мысль сохранена", reply_markup=get_main_menu())
     await state.finish()
 
+# ========== ПРОСМОТР МЫСЛЕЙ (кнопка) ==========
+@dp.message_handler(text="💭 Мои мысли")
+async def show_thoughts_button(message: types.Message):
+    await cmd_thoughts(message)
+
 # ========== СТАТИСТИКА ==========
 @dp.message_handler(text="📊 Статистика")
 async def stats(message: types.Message):
@@ -438,10 +454,7 @@ async def export(message: types.Message):
     with open(file_path, 'rb') as f:
         await message.answer_document(f, caption="📁 Вот все твои данные")
     await message.answer("Главное меню", reply_markup=get_main_menu())
-# ========== ПРОСМОТР МЫСЛЕЙ (через кнопку) ==========
-@dp.message_handler(text="💭 Мои мысли")
-async def show_thoughts_button(message: types.Message):
-    await cmd_thoughts(message)   # вызываем ту же функцию, что и для /thoughts
+
 # ========== НАСТРОЙКИ ==========
 @dp.message_handler(text="⚙️ Настройки")
 async def settings(message: types.Message):
@@ -499,12 +512,10 @@ async def delete_thought_callback(callback_query: types.CallbackQuery):
     success = db.delete_thought_by_index(user_id, idx)
     if success:
         await callback_query.answer("Мысль удалена", show_alert=False)
-        # Обновляем список мыслей
         new_thoughts = db.get_thoughts(user_id)
         if new_thoughts:
             text = "💭 *Твои мысли (последние 10):*\n\n"
             for i, thought in enumerate(reversed(new_thoughts)):
-                new_idx = len(new_thoughts) - 1 - i
                 text += f"{i+1}. *{thought['thought_type']}*: {thought['thought_text']}\n"
                 text += f"   📅 {thought['date']} {thought['time']} | Действие: {thought['action']}\n\n"
             await callback_query.message.edit_text(text, parse_mode="Markdown", reply_markup=get_thoughts_list_keyboard(new_thoughts))
@@ -527,4 +538,3 @@ async def on_startup(dp):
 
 if __name__ == "__main__":
     executor.start_polling(dp, on_startup=on_startup)
-
