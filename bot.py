@@ -1,23 +1,22 @@
 import asyncio
 import logging
 from datetime import datetime
-from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, FSInputFile, CallbackQuery
-from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram import Bot, Dispatcher, types
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.utils import executor
 
 from config import BOT_TOKEN
 from database import db
 from keyboards import *
 
-# Логирование (для отладки)
+# Логирование
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
-dp = Dispatcher(storage=storage)
+dp = Dispatcher(bot, storage=storage)
 
 # ========== СОСТОЯНИЯ ==========
 class SleepStates(StatesGroup):
@@ -54,8 +53,8 @@ class ThoughtStates(StatesGroup):
     action = State()
 
 # ========== КОМАНДЫ ==========
-@dp.message(Command("start"))
-async def cmd_start(message: Message):
+@dp.message_handler(commands=['start'])
+async def cmd_start(message: types.Message):
     await message.answer(
         "👋 Привет! Я твой личный дневник-трекер.\n\n"
         "Что я умею:\n"
@@ -69,132 +68,341 @@ async def cmd_start(message: Message):
         reply_markup=get_main_menu()
     )
 
-@dp.message(Command("menu"))
-async def cmd_menu(message: Message):
+@dp.message_handler(commands=['menu'])
+async def cmd_menu(message: types.Message):
     await message.answer("📱 Главное меню", reply_markup=get_main_menu())
 
-@dp.message(Command("skip"))
-async def cmd_skip(message: Message, state: FSMContext):
-    await state.clear()
+@dp.message_handler(commands=['skip'])
+async def cmd_skip(message: types.Message, state: FSMContext):
+    await state.finish()
     await message.answer("⏭ Текущий опрос пропущен", reply_markup=get_main_menu())
 
 # ========== СОН ==========
-# (все обработчики сна остаются как были, не меняем)
+@dp.message_handler(text="🛌 Сон")
+async def sleep_start(message: types.Message):
+    await SleepStates.bed_time.set()
+    await message.answer("🛌 Во сколько лег?", reply_markup=get_time_buttons())
 
-# ========== ЧЕК-ИН ==========
-# (остаются без изменений)
-
-# ========== ИТОГ ДНЯ ==========
-# (остаются без изменений)
-
-# ========== ЕДА ==========
-# (остаются без изменений)
-
-# ========== НАПИТКИ ==========
-@dp.message(F.text == "🥤 Напитки")
-async def drink_start(message: Message, state: FSMContext):
-    await message.answer("Что выпил?", reply_markup=get_drink_type_buttons())
-    await state.set_state(DrinkStates.drink_type)
-
-@dp.message(DrinkStates.drink_type)
-async def drink_type(message: Message, state: FSMContext):
+@dp.message_handler(state=SleepStates.bed_time)
+async def sleep_bed_time(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
-        await state.clear()
+        await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
         return
+    await state.update_data(bed_time=message.text)
+    await SleepStates.next()
+    await message.answer("Во сколько встал?", reply_markup=get_time_buttons())
 
+@dp.message_handler(state=SleepStates.wake_time)
+async def sleep_wake_time(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    await state.update_data(wake_time=message.text)
+    await SleepStates.next()
+    await message.answer("Качество сна? (1-10)", reply_markup=get_energy_stress_buttons())
+
+@dp.message_handler(state=SleepStates.quality)
+async def sleep_quality(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    await state.update_data(quality=message.text)
+    await SleepStates.next()
+    await message.answer("Просыпался ночью?", reply_markup=get_yes_no_buttons())
+
+@dp.message_handler(state=SleepStates.woke_night)
+async def sleep_woke_night(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    await state.update_data(woke_night=message.text)
+    await SleepStates.next()
+    await message.answer("Заметка? (можно пропустить)", reply_markup=get_skip_markup_text())
+
+@dp.message_handler(state=SleepStates.note)
+async def sleep_note(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    data = await state.get_data()
+    note = message.text if message.text != "Пропустить" else ""
+    db.add_sleep(
+        message.from_user.id,
+        data["bed_time"],
+        data["wake_time"],
+        data["quality"],
+        data["woke_night"],
+        note
+    )
+    await message.answer("✅ Сон сохранен!", reply_markup=get_main_menu())
+    await state.finish()
+
+# ========== ЧЕК-ИН ==========
+@dp.message_handler(text="⚡️ Чек-ин")
+async def checkin_start(message: types.Message):
+    await CheckinStates.energy.set()
+    await message.answer("⚡️ Энергия? (1-10)", reply_markup=get_energy_stress_buttons())
+
+@dp.message_handler(state=CheckinStates.energy)
+async def checkin_energy(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    await state.update_data(energy=message.text)
+    await CheckinStates.next()
+    await message.answer("Стресс? (1-10)", reply_markup=get_energy_stress_buttons())
+
+@dp.message_handler(state=CheckinStates.stress)
+async def checkin_stress(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    await state.update_data(stress=message.text)
+    await CheckinStates.next()
+    await message.answer("Какая эмоция?", reply_markup=get_emotion_buttons())
+
+@dp.message_handler(state=CheckinStates.emotion)
+async def checkin_emotion(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    await state.update_data(emotion=message.text)
+    await CheckinStates.next()
+    await message.answer("Заметка? (можно пропустить)", reply_markup=get_skip_markup_text())
+
+@dp.message_handler(state=CheckinStates.note)
+async def checkin_note(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    data = await state.get_data()
+    note = message.text if message.text != "Пропустить" else ""
+    hour = datetime.now().hour
+    if hour < 12:
+        time_slot = "утро"
+    elif hour < 18:
+        time_slot = "день"
+    else:
+        time_slot = "вечер"
+    db.add_checkin(message.from_user.id, time_slot, data["energy"], data["stress"], data["emotion"], note)
+    await message.answer("✅ Чек-ин сохранен!", reply_markup=get_main_menu())
+    await state.finish()
+
+# ========== ИТОГ ДНЯ ==========
+@dp.message_handler(text="📝 Итог дня")
+async def summary_start(message: types.Message):
+    await DaySummaryStates.score.set()
+    await message.answer("📝 Оценка дня? (1-10)", reply_markup=get_energy_stress_buttons())
+
+@dp.message_handler(state=DaySummaryStates.score)
+async def summary_score(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    await state.update_data(score=message.text)
+    await DaySummaryStates.next()
+    await message.answer("Что было лучшим?", reply_markup=get_skip_markup_text())
+
+@dp.message_handler(state=DaySummaryStates.best)
+async def summary_best(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    best = message.text if message.text != "Пропустить" else ""
+    await state.update_data(best=best)
+    await DaySummaryStates.next()
+    await message.answer("Что было худшим?", reply_markup=get_skip_markup_text())
+
+@dp.message_handler(state=DaySummaryStates.worst)
+async def summary_worst(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    worst = message.text if message.text != "Пропустить" else ""
+    await state.update_data(worst=worst)
+    await DaySummaryStates.next()
+    await message.answer("За что благодарен?", reply_markup=get_skip_markup_text())
+
+@dp.message_handler(state=DaySummaryStates.gratitude)
+async def summary_gratitude(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    gratitude = message.text if message.text != "Пропустить" else ""
+    await state.update_data(gratitude=gratitude)
+    await DaySummaryStates.next()
+    await message.answer("Заметка? (можно пропустить)", reply_markup=get_skip_markup_text())
+
+@dp.message_handler(state=DaySummaryStates.note)
+async def summary_note(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    data = await state.get_data()
+    note = message.text if message.text != "Пропустить" else ""
+    db.add_day_summary(message.from_user.id, data["score"], data["best"], data["worst"], data["gratitude"], note)
+    await message.answer("✅ Итог дня сохранен!", reply_markup=get_main_menu())
+    await state.finish()
+
+# ========== ЕДА ==========
+@dp.message_handler(text="🍽 Еда")
+async def food_start(message: types.Message):
+    await FoodStates.meal_type.set()
+    await message.answer("Что это за прием?", reply_markup=get_meal_type_buttons())
+
+@dp.message_handler(state=FoodStates.meal_type)
+async def food_meal_type(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    await state.update_data(meal_type=message.text)
+    await FoodStates.next()
+    await message.answer("Что съел?", reply_markup=get_main_menu())
+
+@dp.message_handler(state=FoodStates.food_text)
+async def food_text(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    db.add_food(message.from_user.id, data["meal_type"], message.text)
+    await message.answer(f"✅ Добавлено: {data['meal_type']} — {message.text}", reply_markup=get_main_menu())
+    await state.finish()
+
+# ========== НАПИТКИ ==========
+@dp.message_handler(text="🥤 Напитки")
+async def drink_start(message: types.Message):
+    await DrinkStates.drink_type.set()
+    await message.answer("Что выпил?", reply_markup=get_drink_type_buttons())
+
+@dp.message_handler(state=DrinkStates.drink_type)
+async def drink_type(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
     drink = message.text
     await state.update_data(drink_type=drink)
 
-    # Если выбрано "Другое" – запрашиваем ввод
     if drink == "🔄 Другое":
         await message.answer("Напиши, что именно и сколько (например: 'энергетик 0.5л')", reply_markup=get_main_menu())
-        await state.set_state(DrinkStates.amount)
+        await DrinkStates.amount.set()
     else:
+        await DrinkStates.amount.set()
         await message.answer("Сколько?", reply_markup=get_drink_amount_buttons())
-        await state.set_state(DrinkStates.amount)
 
-@dp.message(DrinkStates.amount)
-async def drink_amount(message: Message, state: FSMContext):
+@dp.message_handler(state=DrinkStates.amount)
+async def drink_amount(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
-        await state.clear()
+        await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
         return
-
     data = await state.get_data()
     drink_type = data["drink_type"]
     amount = message.text
     db.add_drink(message.from_user.id, drink_type, amount)
     await message.answer(f"✅ Добавлено: {drink_type} — {amount}", reply_markup=get_main_menu())
-    await state.clear()
+    await state.finish()
 
 # ========== МЫСЛИ ==========
-# (остаются без изменений)
+@dp.message_handler(text="💭 Мысли")
+async def thought_start(message: types.Message):
+    await ThoughtStates.thought_text.set()
+    await message.answer("Какая мысль?", reply_markup=get_main_menu())
+
+@dp.message_handler(state=ThoughtStates.thought_text)
+async def thought_text(message: types.Message, state: FSMContext):
+    await state.update_data(thought_text=message.text)
+    await ThoughtStates.next()
+    await message.answer("Тип мысли?", reply_markup=get_thought_type_buttons())
+
+@dp.message_handler(state=ThoughtStates.thought_type)
+async def thought_type(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.finish()
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    await state.update_data(thought_type=message.text)
+    await ThoughtStates.next()
+    await message.answer("Что сделал с мыслью?", reply_markup=get_thought_action_buttons())
+
+@dp.message_handler(state=ThoughtStates.action)
+async def thought_action(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    db.add_thought(message.from_user.id, data["thought_text"], data["thought_type"], message.text)
+    await message.answer("✅ Мысль сохранена", reply_markup=get_main_menu())
+    await state.finish()
 
 # ========== СТАТИСТИКА ==========
-@dp.message(F.text == "📊 Статистика")
-async def stats(message: Message):
+@dp.message_handler(text="📊 Статистика")
+async def stats(message: types.Message):
     text = db.get_stats(message.from_user.id)
     await message.answer(text, reply_markup=get_main_menu())
 
 # ========== ЭКСПОРТ ==========
-@dp.message(F.text == "📤 Экспорт")
-async def export(message: Message):
+@dp.message_handler(text="📤 Экспорт")
+async def export(message: types.Message):
     file_path = db.export_all(message.from_user.id)
-    await message.answer_document(
-        FSInputFile(file_path, filename="my_data.json"),
-        caption="📁 Вот все твои данные"
-    )
+    with open(file_path, 'rb') as f:
+        await message.answer_document(f, caption="📁 Вот все твои данные")
+    await message.answer("Главное меню", reply_markup=get_main_menu())
 
 # ========== НАСТРОЙКИ ==========
-@dp.message(F.text == "⚙️ Настройки")
-async def settings(message: Message):
+@dp.message_handler(text="⚙️ Настройки")
+async def settings(message: types.Message):
     await message.answer(
         "⚙️ Настройки\n\n"
         "Выбери действие:",
         reply_markup=get_settings_menu()
     )
 
-@dp.message(F.text == "🔄 Сброс данных")
-async def reset_request(message: Message):
+@dp.message_handler(text="🔄 Сброс данных")
+async def reset_request(message: types.Message):
     await message.answer(
         "⚠️ ВНИМАНИЕ! Это действие удалит ВСЕ твои данные (сон, чек-ины, еду, мысли и т.д.).\n\n"
         "Ты уверен?",
         reply_markup=get_reset_confirm_keyboard()
     )
 
-@dp.message(F.text == "❌ Назад")
-async def back_to_main(message: Message):
+@dp.message_handler(text="❌ Назад")
+async def back_to_main(message: types.Message):
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
-# Обработчики подтверждения сброса
-@dp.callback_query(lambda c: c.data == "reset_confirm")
-async def reset_confirm(callback: CallbackQuery):
-    user_id = callback.from_user.id
+@dp.callback_query_handler(lambda c: c.data == "reset_confirm")
+async def reset_confirm(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
     success = db.reset_user_data(user_id)
     if success:
-        await callback.message.edit_text("✅ Все твои данные удалены.", reply_markup=None)
+        await callback_query.message.edit_text("✅ Все твои данные удалены.")
     else:
-        await callback.message.edit_text("❌ Не удалось удалить данные (возможно, их и не было).", reply_markup=None)
-    await callback.answer()
-    # Возвращаем в главное меню (отправим новое сообщение)
-    await callback.message.answer("Главное меню", reply_markup=get_main_menu())
+        await callback_query.message.edit_text("❌ Не удалось удалить данные (возможно, их и не было).")
+    await callback_query.answer()
+    await callback_query.message.answer("Главное меню", reply_markup=get_main_menu())
 
-@dp.callback_query(lambda c: c.data == "reset_cancel")
-async def reset_cancel(callback: CallbackQuery):
-    await callback.message.edit_text("❌ Сброс отменён.", reply_markup=None)
-    await callback.answer()
-    await callback.message.answer("Главное меню", reply_markup=get_main_menu())
+@dp.callback_query_handler(lambda c: c.data == "reset_cancel")
+async def reset_cancel(callback_query: types.CallbackQuery):
+    await callback_query.message.edit_text("❌ Сброс отменён.")
+    await callback_query.answer()
+    await callback_query.message.answer("Главное меню", reply_markup=get_main_menu())
 
-# ========== ВЕБ-СЕРВЕР ДЛЯ RENDER ==========
-# Импортируем веб-модуль (web.py) и запускаем в фоне
-import web
-
-async def main():
-    # Запускаем веб-сервер в фоне
+# ========== ЗАПУСК ==========
+async def on_startup(dp):
+    # Запускаем веб-сервер в фоновом режиме
+    import web
     asyncio.create_task(web.start_web())
-    # Запускаем бота
-    await dp.start_polling(bot)
+    print("🤖 Бот запущен!")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    executor.start_polling(dp, on_startup=on_startup)
