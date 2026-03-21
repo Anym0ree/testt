@@ -21,13 +21,22 @@ def get_settings_menu():
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
+def get_reset_confirm_keyboard():
+    buttons = [
+        [InlineKeyboardButton(text="✅ Да, сбросить всё", callback_data="reset_confirm")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="reset_cancel")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 def get_emotion_buttons():
     buttons = [
         [KeyboardButton(text="😊 Радость"), KeyboardButton(text="😠 Гнев")],
         [KeyboardButton(text="😰 Тревога"), KeyboardButton(text="😌 Спокойствие")],
         [KeyboardButton(text="😤 Раздражение"), KeyboardButton(text="😔 Грусть")],
-        [KeyboardButton(text="😐 Апатия"), KeyboardButton(text="✍️ Своя")],
-        [KeyboardButton(text="❌ Отмена")]
+        [KeyboardButton(text="😐 Апатия"), KeyboardButton(text="😨 Страх")],
+        [KeyboardButton(text="😌 Облегчение"), KeyboardButton(text="😳 Стыд")],
+        [KeyboardButton(text="✨ Вдохновение"), KeyboardButton(text="✍️ Своя")],
+        [KeyboardButton(text="✅ Готово"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -91,6 +100,7 @@ def get_time_buttons():
     buttons = [
         [KeyboardButton(text="22:00"), KeyboardButton(text="23:00")],
         [KeyboardButton(text="00:00"), KeyboardButton(text="01:00")],
+        [KeyboardButton(text="02:00"), KeyboardButton(text="03:00")],
         [KeyboardButton(text="Другое"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -100,10 +110,3 @@ def get_skip_markup_text():
         [KeyboardButton(text="Пропустить"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
-
-def get_reset_confirm_keyboard():
-    buttons = [
-        [InlineKeyboardButton(text="✅ Да, сбросить всё", callback_data="reset_confirm")],
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="reset_cancel")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
