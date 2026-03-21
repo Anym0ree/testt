@@ -51,23 +51,71 @@ class ThoughtStates(StatesGroup):
     thought_type = State()
     action = State()
 
+class TimezoneStates(StatesGroup):
+    city = State()
+    offset = State()
+
 # ========== КОМАНДЫ ==========
 @dp.message_handler(commands=['start'])
 async def cmd_start(message: types.Message):
-    await message.answer(
-        "👋 Привет! Я твой личный дневник-трекер.\n\n"
-        "Что я умею:\n"
-        "• 🛌 Записывать сон (один раз в день)\n"
-        "• ⚡️ Делать чек-ины (энергия, стресс, эмоции)\n"
-        "• 🍽 Записывать еду и напитки\n"
-        "• 💭 Сохранять мысли\n"
-        "• 📝 Итог дня (только после 18:00, один раз в день)\n"
-        "• 📊 Статистика\n"
-        "• 📤 Экспорт\n\n"
-        "Главное меню — /menu\n"
-        "Посмотреть мысли — /thoughts или кнопка",
-        reply_markup=get_main_menu()
-    )
+    # Проверяем, установлен ли часовой пояс
+    if db.get_user_timezone(message.from_user.id) == 0:
+        await message.answer(
+            "👋 Привет! Я твой личный дневник-трекер.\n\n"
+            "Для корректной работы мне нужно знать твой часовой пояс.\n"
+            "Выбери свой город или введи смещение вручную:",
+            reply_markup=get_timezone_buttons()
+        )
+        await TimezoneStates.city.set()
+    else:
+        await message.answer(
+            "👋 Привет! Я твой личный дневник-трекер.\n\n"
+            "Что я умею:\n"
+            "• 🛌 Записывать сон (один раз в день)\n"
+            "• ⚡️ Делать чек-ины (энергия, стресс, эмоции)\n"
+            "• 🍽 Записывать еду и напитки\n"
+            "• 💭 Сохранять мысли\n"
+            "• 📝 Итог дня (только после 18:00, один раз в день)\n"
+            "• 📊 Статистика\n"
+            "• 📤 Экспорт\n\n"
+            "Главное меню — /menu",
+            reply_markup=get_main_menu()
+        )
+
+# ========== УСТАНОВКА ГОРОДА ==========
+@dp.message_handler(state=TimezoneStates.city)
+async def set_city(message: types.Message, state: FSMContext):
+    city_map = {
+        "Москва (UTC+3)": 3,
+        "Санкт-Петербург (UTC+3)": 3,
+        "Екатеринбург (UTC+5)": 5,
+        "Новосибирск (UTC+7)": 7,
+        "Владивосток (UTC+10)": 10,
+        "Калининград (UTC+2)": 2
+    }
+    if message.text in city_map:
+        offset = city_map[message.text]
+        db.set_user_timezone(message.from_user.id, offset)
+        await message.answer(f"✅ Часовой пояс установлен: UTC+{offset}\n\nГлавное меню — /menu", reply_markup=get_main_menu())
+        await state.finish()
+    elif message.text == "Другое":
+        await message.answer("Введи смещение в часах от UTC (например, 3 для Москвы, -5 для Нью-Йорка):", reply_markup=types.ReplyKeyboardRemove())
+        await TimezoneStates.offset.set()
+    elif message.text == "❌ Отмена":
+        await message.answer("❌ Отменено. Для настройки используй /start или настройки.", reply_markup=get_main_menu())
+        await state.finish()
+    else:
+        await message.answer("Пожалуйста, выбери город из списка или нажми 'Другое'.", reply_markup=get_timezone_buttons())
+
+@dp.message_handler(state=TimezoneStates.offset)
+async def set_offset(message: types.Message, state: FSMContext):
+    try:
+        offset = int(message.text)
+        db.set_user_timezone(message.from_user.id, offset)
+        await message.answer(f"✅ Часовой пояс установлен: UTC{offset:+d}\n\nГлавное меню — /menu", reply_markup=get_main_menu())
+        await state.finish()
+    except ValueError:
+        await message.answer("Введи целое число (например, 3, -5).", reply_markup=types.ReplyKeyboardRemove())
 
 @dp.message_handler(commands=['menu'])
 async def cmd_menu(message: types.Message):
@@ -91,6 +139,30 @@ async def cmd_thoughts(message: types.Message):
         text += f"   📅 {thought['date']} {thought['time']} | Действие: {thought['action']}\n\n"
 
     await message.answer(text, parse_mode="Markdown", reply_markup=get_thoughts_list_keyboard(thoughts))
+
+# ========== СПИСОК ЕДЫ ЗА СЕГОДНЯ ==========
+@dp.message_handler(text="🍽 Еда сегодня")
+async def show_today_food(message: types.Message):
+    food_list = db.get_today_food(message.from_user.id)
+    if not food_list:
+        await message.answer("🍽 За сегодня ещё нет записей о еде.", reply_markup=get_main_menu())
+        return
+    text = "🍽 *Еда сегодня:*\n\n"
+    for f in food_list:
+        text += f"🕐 {f['time']} — {f['meal_type']}: {f['food_text']}\n"
+    await message.answer(text, parse_mode="Markdown", reply_markup=get_main_menu())
+
+# ========== СПИСОК НАПИТКОВ ЗА СЕГОДНЯ ==========
+@dp.message_handler(text="🥤 Напитки сегодня")
+async def show_today_drinks(message: types.Message):
+    drinks_list = db.get_today_drinks(message.from_user.id)
+    if not drinks_list:
+        await message.answer("🥤 За сегодня ещё нет записей о напитках.", reply_markup=get_main_menu())
+        return
+    text = "🥤 *Напитки сегодня:*\n\n"
+    for d in drinks_list:
+        text += f"🕐 {d['time']} — {d['drink_type']}: {d['amount']}\n"
+    await message.answer(text, parse_mode="Markdown", reply_markup=get_main_menu())
 
 # ========== СОН ==========
 @dp.message_handler(text="🛌 Сон")
@@ -255,7 +327,7 @@ async def checkin_note(message: types.Message, state: FSMContext):
         return
     data = await state.get_data()
     note = message.text if message.text != "Пропустить" else ""
-    hour = datetime.now().hour
+    hour = db.get_user_local_hour(message.from_user.id)
     if hour < 12:
         time_slot = "утро"
     elif hour < 18:
@@ -276,8 +348,9 @@ async def checkin_note(message: types.Message, state: FSMContext):
 # ========== ИТОГ ДНЯ ==========
 @dp.message_handler(text="📝 Итог дня")
 async def summary_start(message: types.Message):
-    if datetime.now().hour < 18:
-        await message.answer("📝 Итог дня можно подвести только после 18:00.", reply_markup=get_main_menu())
+    local_hour = db.get_user_local_hour(message.from_user.id)
+    if local_hour < 18:
+        await message.answer(f"📝 Итог дня можно подвести только после 18:00. Сейчас {local_hour}:00 по твоему времени.", reply_markup=get_main_menu())
         return
     if db.has_day_summary_today(message.from_user.id):
         await message.answer("❌ Ты уже записал итог дня сегодня. Итог дня можно записывать только один раз.", reply_markup=get_main_menu())
@@ -463,6 +536,14 @@ async def settings(message: types.Message):
         "Выбери действие:",
         reply_markup=get_settings_menu()
     )
+
+@dp.message_handler(text="🌍 Сменить город")
+async def change_city(message: types.Message):
+    await message.answer(
+        "Выбери свой город или введи смещение вручную:",
+        reply_markup=get_timezone_buttons()
+    )
+    await TimezoneStates.city.set()
 
 @dp.message_handler(text="🔄 Сброс данных")
 async def reset_request(message: types.Message):
