@@ -1,5 +1,5 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from aiogram.utils.keyboard import ReplyKeyboardBuilder
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
 def get_main_menu():
     builder = ReplyKeyboardBuilder()
@@ -13,6 +13,13 @@ def get_main_menu():
     builder.add(KeyboardButton(text="📤 Экспорт"))
     builder.add(KeyboardButton(text="⚙️ Настройки"))
     builder.adjust(2)
+    return builder.as_markup(resize_keyboard=True)
+
+def get_settings_menu():
+    builder = ReplyKeyboardBuilder()
+    builder.add(KeyboardButton(text="🔄 Сброс данных"))
+    builder.add(KeyboardButton(text="❌ Назад"))
+    builder.adjust(1)
     return builder.as_markup(resize_keyboard=True)
 
 def get_emotion_buttons():
@@ -88,3 +95,9 @@ def get_skip_markup_text():
     builder.add(KeyboardButton(text="Пропустить"))
     builder.add(KeyboardButton(text="❌ Отмена"))
     return builder.as_markup(resize_keyboard=True)
+
+def get_reset_confirm_keyboard():
+    builder = InlineKeyboardBuilder()
+    builder.add(InlineKeyboardButton(text="✅ Да, сбросить всё", callback_data="reset_confirm"))
+    builder.add(InlineKeyboardButton(text="❌ Отмена", callback_data="reset_cancel"))
+    return builder.as_markup()
