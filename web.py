@@ -17,7 +17,6 @@ async def run_web():
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
     logging.info(f"Web server started on port {port}")
-    # Бесконечно ждём
     await asyncio.Event().wait()
 
 def start_web():
