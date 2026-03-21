@@ -4,7 +4,6 @@ from datetime import datetime
 from config import DATA_FOLDER
 
 class Database:
-    
     def __init__(self):
         self.data_folder = DATA_FOLDER
 
@@ -29,7 +28,6 @@ class Database:
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-    # Сон
     def add_sleep(self, user_id, bed_time, wake_time, quality, woke_night, note=""):
         data = self._load_json(user_id, "sleep.json")
         record = {
@@ -44,8 +42,7 @@ class Database:
         data.append(record)
         self._save_json(user_id, "sleep.json", data)
 
-    # Чек-ин
-    def add_checkin(self, user_id, time_slot, energy, stress, emotion, note=""):
+    def add_checkin(self, user_id, time_slot, energy, stress, emotions, note=""):
         data = self._load_json(user_id, "checkins.json")
         record = {
             "date": datetime.now().strftime("%Y-%m-%d"),
@@ -54,13 +51,12 @@ class Database:
             "time_slot": time_slot,
             "energy": energy,
             "stress": stress,
-            "emotion": emotion,
+            "emotions": emotions,
             "note": note
         }
         data.append(record)
         self._save_json(user_id, "checkins.json", data)
 
-    # Итог дня
     def add_day_summary(self, user_id, score, best, worst, gratitude, note=""):
         data = self._load_json(user_id, "day_summary.json")
         record = {
@@ -75,7 +71,6 @@ class Database:
         data.append(record)
         self._save_json(user_id, "day_summary.json", data)
 
-    # Еда
     def add_food(self, user_id, meal_type, food_text):
         data = self._load_json(user_id, "food.json")
         record = {
@@ -88,7 +83,6 @@ class Database:
         data.append(record)
         self._save_json(user_id, "food.json", data)
 
-    # Напитки
     def add_drink(self, user_id, drink_type, amount):
         data = self._load_json(user_id, "drinks.json")
         record = {
@@ -101,7 +95,6 @@ class Database:
         data.append(record)
         self._save_json(user_id, "drinks.json", data)
 
-    # Мысли
     def add_thought(self, user_id, thought_text, thought_type, action):
         data = self._load_json(user_id, "thoughts.json")
         record = {
@@ -115,7 +108,20 @@ class Database:
         data.append(record)
         self._save_json(user_id, "thoughts.json", data)
 
-    # Статистика
+    def get_thoughts(self, user_id, limit=10):
+        """Возвращает последние мысли (список)"""
+        thoughts = self._load_json(user_id, "thoughts.json")
+        return thoughts[-limit:] if thoughts else []
+
+    def delete_thought_by_index(self, user_id, index):
+        """Удаляет мысль по индексу (отрицательный индекс с конца)"""
+        thoughts = self._load_json(user_id, "thoughts.json")
+        if 0 <= index < len(thoughts):
+            del thoughts[index]
+            self._save_json(user_id, "thoughts.json", thoughts)
+            return True
+        return False
+
     def get_stats(self, user_id):
         sleep = self._load_json(user_id, "sleep.json")
         checkins = self._load_json(user_id, "checkins.json")
@@ -135,11 +141,11 @@ class Database:
             text += f"\n😴 Последний сон:\n   Лег: {last.get('bed_time')}, встал: {last.get('wake_time')}\n   Качество: {last.get('quality')}/10"
         if checkins:
             last = checkins[-1]
-            text += f"\n\n⚡️ Последний чек-ин:\n   Энергия: {last.get('energy')}/10, стресс: {last.get('stress')}/10\n   Эмоция: {last.get('emotion')}"
+            emotions_str = ", ".join(last.get('emotions', []))
+            text += f"\n\n⚡️ Последний чек-ин:\n   Энергия: {last.get('energy')}/10, стресс: {last.get('stress')}/10\n   Эмоции: {emotions_str}"
 
         return text
 
-    # Экспорт всех данных
     def export_all(self, user_id):
         export_data = {
             "user_id": user_id,
@@ -158,7 +164,6 @@ class Database:
 
         return file_path
 
-    # Сброс всех данных пользователя
     def reset_user_data(self, user_id):
         user_folder = self._get_user_folder(user_id)
         if os.path.exists(user_folder):
@@ -174,18 +179,5 @@ class Database:
                 pass
             return True
         return False
-        def get_thoughts(self, user_id, limit=10):
-        """Возвращает последние мысли (список)"""
-        thoughts = self._load_json(user_id, "thoughts.json")
-        # Возвращаем последние limit штук
-        return thoughts[-limit:] if thoughts else []
 
-    def delete_thought_by_index(self, user_id, index):
-        """Удаляет мысль по индексу (отрицательный индекс с конца)"""
-        thoughts = self._load_json(user_id, "thoughts.json")
-        if 0 <= index < len(thoughts):
-            del thoughts[index]
-            self._save_json(user_id, "thoughts.json", thoughts)
-            return True
-        return False
 db = Database()
