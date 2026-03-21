@@ -1,522 +1,183 @@
-import asyncio
-import logging
+import json
+import os
 from datetime import datetime
-from aiogram import Bot, Dispatcher, types
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.utils import executor
+from config import DATA_FOLDER
 
-from config import BOT_TOKEN
-from database import db
-from keyboards import *
+class Database:
+    def __init__(self):
+        self.data_folder = DATA_FOLDER
 
-logging.basicConfig(level=logging.INFO)
+    def _get_user_folder(self, user_id):
+        return os.path.join(self.data_folder, str(user_id))
 
-bot = Bot(token=BOT_TOKEN)
-storage = MemoryStorage()
-dp = Dispatcher(bot, storage=storage)
+    def _get_user_file(self, user_id, filename):
+        user_folder = self._get_user_folder(user_id)
+        if not os.path.exists(user_folder):
+            os.makedirs(user_folder)
+        return os.path.join(user_folder, filename)
 
-# ========== СОСТОЯНИЯ ==========
-class SleepStates(StatesGroup):
-    bed_time = State()
-    wake_time = State()
-    quality = State()
-    woke_night = State()
-    note = State()
+    def _load_json(self, user_id, filename):
+        file_path = self._get_user_file(user_id, filename)
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return []
 
-class CheckinStates(StatesGroup):
-    energy = State()
-    stress = State()
-    emotions = State()
-    note = State()
+    def _save_json(self, user_id, filename, data):
+        file_path = self._get_user_file(user_id, filename)
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
-class DaySummaryStates(StatesGroup):
-    score = State()
-    best = State()
-    worst = State()
-    gratitude = State()
-    note = State()
+    def add_sleep(self, user_id, bed_time, wake_time, quality, woke_night, note=""):
+        data = self._load_json(user_id, "sleep.json")
+        record = {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "timestamp": datetime.now().isoformat(),
+            "bed_time": bed_time,
+            "wake_time": wake_time,
+            "quality": quality,
+            "woke_night": woke_night,
+            "note": note
+        }
+        data.append(record)
+        self._save_json(user_id, "sleep.json", data)
 
-class FoodStates(StatesGroup):
-    meal_type = State()
-    food_text = State()
+    def add_checkin(self, user_id, time_slot, energy, stress, emotions, note=""):
+        data = self._load_json(user_id, "checkins.json")
+        record = {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "time": datetime.now().strftime("%H:%M"),
+            "timestamp": datetime.now().isoformat(),
+            "time_slot": time_slot,
+            "energy": energy,
+            "stress": stress,
+            "emotions": emotions,
+            "note": note
+        }
+        data.append(record)
+        self._save_json(user_id, "checkins.json", data)
 
-class DrinkStates(StatesGroup):
-    drink_type = State()
-    amount = State()
+    def add_day_summary(self, user_id, score, best, worst, gratitude, note=""):
+        data = self._load_json(user_id, "day_summary.json")
+        record = {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "timestamp": datetime.now().isoformat(),
+            "score": score,
+            "best": best,
+            "worst": worst,
+            "gratitude": gratitude,
+            "note": note
+        }
+        data.append(record)
+        self._save_json(user_id, "day_summary.json", data)
 
-class ThoughtStates(StatesGroup):
-    thought_text = State()
-    thought_type = State()
-    action = State()
+    def add_food(self, user_id, meal_type, food_text):
+        data = self._load_json(user_id, "food.json")
+        record = {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "time": datetime.now().strftime("%H:%M"),
+            "timestamp": datetime.now().isoformat(),
+            "meal_type": meal_type,
+            "food_text": food_text
+        }
+        data.append(record)
+        self._save_json(user_id, "food.json", data)
 
-# ========== КОМАНДЫ ==========
-@dp.message_handler(commands=['start'])
-async def cmd_start(message: types.Message):
-    await message.answer(
-        "👋 Привет! Я твой личный дневник-трекер.\n\n"
-        "Что я умею:\n"
-        "• 🛌 Записывать сон\n"
-        "• ⚡️ Делать чек-ины (энергия, стресс, эмоции)\n"
-        "• 🍽 Записывать еду и напитки\n"
-        "• 💭 Сохранять мысли\n"
-        "• 📊 Показывать статистику\n"
-        "• 📤 Экспортировать все данные\n\n"
-        "Главное меню — /menu\n"
-        "Посмотреть мысли — /thoughts",
-        reply_markup=get_main_menu()
-    )
+    def add_drink(self, user_id, drink_type, amount):
+        data = self._load_json(user_id, "drinks.json")
+        record = {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "time": datetime.now().strftime("%H:%M"),
+            "timestamp": datetime.now().isoformat(),
+            "drink_type": drink_type,
+            "amount": amount
+        }
+        data.append(record)
+        self._save_json(user_id, "drinks.json", data)
 
-@dp.message_handler(commands=['menu'])
-async def cmd_menu(message: types.Message):
-    await message.answer("📱 Главное меню", reply_markup=get_main_menu())
+    def add_thought(self, user_id, thought_text, thought_type, action):
+        data = self._load_json(user_id, "thoughts.json")
+        record = {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "time": datetime.now().strftime("%H:%M"),
+            "timestamp": datetime.now().isoformat(),
+            "thought_text": thought_text,
+            "thought_type": thought_type,
+            "action": action
+        }
+        data.append(record)
+        self._save_json(user_id, "thoughts.json", data)
 
-@dp.message_handler(commands=['skip'])
-async def cmd_skip(message: types.Message, state: FSMContext):
-    await state.finish()
-    await message.answer("⏭ Текущий опрос пропущен", reply_markup=get_main_menu())
+    def get_thoughts(self, user_id, limit=10):
+        """Возвращает последние мысли (список)"""
+        thoughts = self._load_json(user_id, "thoughts.json")
+        return thoughts[-limit:] if thoughts else []
 
-@dp.message_handler(commands=['thoughts'])
-async def cmd_thoughts(message: types.Message):
-    thoughts = db.get_thoughts(message.from_user.id)
-    if not thoughts:
-        await message.answer("💭 У тебя пока нет записанных мыслей.", reply_markup=get_main_menu())
-        return
+    def delete_thought_by_index(self, user_id, index):
+        """Удаляет мысль по индексу (отрицательный индекс с конца)"""
+        thoughts = self._load_json(user_id, "thoughts.json")
+        if 0 <= index < len(thoughts):
+            del thoughts[index]
+            self._save_json(user_id, "thoughts.json", thoughts)
+            return True
+        return False
 
-    text = "💭 *Твои мысли (последние 10):*\n\n"
-    for i, thought in enumerate(reversed(thoughts)):
-        idx = len(thoughts) - 1 - i  # индекс в исходном списке
-        text += f"{i+1}. *{thought['thought_type']}*: {thought['thought_text']}\n"
-        text += f"   📅 {thought['date']} {thought['time']} | Действие: {thought['action']}\n\n"
+    def get_stats(self, user_id):
+        sleep = self._load_json(user_id, "sleep.json")
+        checkins = self._load_json(user_id, "checkins.json")
+        food = self._load_json(user_id, "food.json")
+        drinks = self._load_json(user_id, "drinks.json")
+        thoughts = self._load_json(user_id, "thoughts.json")
 
-    await message.answer(text, parse_mode="Markdown", reply_markup=get_thoughts_list_keyboard(thoughts))
+        text = "📊 ТВОЯ СТАТИСТИКА\n\n"
+        text += f"😴 Сон: {len(sleep)} записей\n"
+        text += f"⚡️ Чек-ины: {len(checkins)} записей\n"
+        text += f"🍽 Еда: {len(food)} записей\n"
+        text += f"🥤 Напитки: {len(drinks)} записей\n"
+        text += f"💭 Мысли: {len(thoughts)} записей\n"
 
-# ========== СОН ==========
-@dp.message_handler(text="🛌 Сон")
-async def sleep_start(message: types.Message):
-    await SleepStates.bed_time.set()
-    await message.answer("🛌 Во сколько лег?", reply_markup=get_time_buttons())
+        if sleep:
+            last = sleep[-1]
+            text += f"\n😴 Последний сон:\n   Лег: {last.get('bed_time')}, встал: {last.get('wake_time')}\n   Качество: {last.get('quality')}/10"
+        if checkins:
+            last = checkins[-1]
+            emotions_str = ", ".join(last.get('emotions', []))
+            text += f"\n\n⚡️ Последний чек-ин:\n   Энергия: {last.get('energy')}/10, стресс: {last.get('stress')}/10\n   Эмоции: {emotions_str}"
 
-@dp.message_handler(state=SleepStates.bed_time)
-async def sleep_bed_time(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    if message.text == "Другое":
-        await message.answer("Введи время в формате ЧЧ:ММ (например 23:45):", reply_markup=types.ReplyKeyboardRemove())
-        return
-    await state.update_data(bed_time=message.text)
-    await SleepStates.next()
-    await message.answer("Во сколько встал?", reply_markup=get_time_buttons())
+        return text
 
-@dp.message_handler(state=SleepStates.bed_time)
-async def sleep_bed_time_custom(message: types.Message, state: FSMContext):
-    await state.update_data(bed_time=message.text)
-    await SleepStates.next()
-    await message.answer("Во сколько встал?", reply_markup=get_time_buttons())
+    def export_all(self, user_id):
+        export_data = {
+            "user_id": user_id,
+            "export_date": datetime.now().isoformat(),
+            "sleep": self._load_json(user_id, "sleep.json"),
+            "checkins": self._load_json(user_id, "checkins.json"),
+            "day_summary": self._load_json(user_id, "day_summary.json"),
+            "food": self._load_json(user_id, "food.json"),
+            "drinks": self._load_json(user_id, "drinks.json"),
+            "thoughts": self._load_json(user_id, "thoughts.json")
+        }
 
-@dp.message_handler(state=SleepStates.wake_time)
-async def sleep_wake_time(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    if message.text == "Другое":
-        await message.answer("Введи время в формате ЧЧ:ММ (например 09:15):", reply_markup=types.ReplyKeyboardRemove())
-        return
-    await state.update_data(wake_time=message.text)
-    await SleepStates.next()
-    await message.answer("Качество сна? (1-10)", reply_markup=get_energy_stress_buttons())
+        file_path = os.path.join(self.data_folder, str(user_id), "export_all.json")
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(export_data, f, ensure_ascii=False, indent=2)
 
-@dp.message_handler(state=SleepStates.wake_time)
-async def sleep_wake_time_custom(message: types.Message, state: FSMContext):
-    await state.update_data(wake_time=message.text)
-    await SleepStates.next()
-    await message.answer("Качество сна? (1-10)", reply_markup=get_energy_stress_buttons())
+        return file_path
 
-@dp.message_handler(state=SleepStates.quality)
-async def sleep_quality(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    await state.update_data(quality=message.text)
-    await SleepStates.next()
-    await message.answer("Просыпался ночью?", reply_markup=get_yes_no_buttons())
+    def reset_user_data(self, user_id):
+        user_folder = self._get_user_folder(user_id)
+        if os.path.exists(user_folder):
+            for filename in os.listdir(user_folder):
+                file_path = os.path.join(user_folder, filename)
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+            try:
+                os.rmdir(user_folder)
+            except Exception:
+                pass
+            return True
+        return False
 
-@dp.message_handler(state=SleepStates.woke_night)
-async def sleep_woke_night(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    await state.update_data(woke_night=message.text)
-    await SleepStates.next()
-    await message.answer("Заметка? (можно пропустить)", reply_markup=get_skip_markup_text())
-
-@dp.message_handler(state=SleepStates.note)
-async def sleep_note(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    data = await state.get_data()
-    note = message.text if message.text != "Пропустить" else ""
-    db.add_sleep(
-        message.from_user.id,
-        data["bed_time"],
-        data["wake_time"],
-        data["quality"],
-        data["woke_night"],
-        note
-    )
-    await message.answer("✅ Сон сохранен!", reply_markup=get_main_menu())
-    await state.finish()
-
-# ========== ЧЕК-ИН ==========
-@dp.message_handler(text="⚡️ Чек-ин")
-async def checkin_start(message: types.Message):
-    await CheckinStates.energy.set()
-    await message.answer("⚡️ Энергия? (1-10)", reply_markup=get_energy_stress_buttons())
-
-@dp.message_handler(state=CheckinStates.energy)
-async def checkin_energy(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    await state.update_data(energy=message.text)
-    await CheckinStates.next()
-    await message.answer("Стресс? (1-10)", reply_markup=get_energy_stress_buttons())
-
-@dp.message_handler(state=CheckinStates.stress)
-async def checkin_stress(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    await state.update_data(stress=message.text)
-    await CheckinStates.next()
-    await state.update_data(emotions_list=[])
-    await message.answer(
-        "Выбери эмоции (можно несколько). Когда закончишь, нажми '✅ Готово':",
-        reply_markup=get_emotion_buttons()
-    )
-
-@dp.message_handler(state=CheckinStates.emotions)
-async def checkin_emotions(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    if message.text == "✅ Готово":
-        data = await state.get_data()
-        emotions = data.get("emotions_list", [])
-        if not emotions:
-            await message.answer("Выбери хотя бы одну эмоцию или нажми 'Отмена'", reply_markup=get_emotion_buttons())
-            return
-        await CheckinStates.next()
-        await message.answer("Заметка? (можно пропустить)", reply_markup=get_skip_markup_text())
-        return
-    if message.text == "✍️ Своя":
-        await message.answer("Напиши свою эмоцию:", reply_markup=types.ReplyKeyboardRemove())
-        return
-
-    data = await state.get_data()
-    emotions_list = data.get("emotions_list", [])
-    if message.text not in emotions_list:
-        emotions_list.append(message.text)
-        await state.update_data(emotions_list=emotions_list)
-        await message.answer(f"✅ Добавлено: {message.text}\nВыбрано: {', '.join(emotions_list)}", reply_markup=get_emotion_buttons())
-    else:
-        await message.answer(f"⚠️ Эмоция '{message.text}' уже добавлена", reply_markup=get_emotion_buttons())
-
-@dp.message_handler(state=CheckinStates.emotions)
-async def checkin_emotions_custom(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    emotions_list = data.get("emotions_list", [])
-    emotions_list.append(message.text)
-    await state.update_data(emotions_list=emotions_list)
-    await message.answer(f"✅ Добавлено: {message.text}\nВыбрано: {', '.join(emotions_list)}", reply_markup=get_emotion_buttons())
-
-@dp.message_handler(state=CheckinStates.note)
-async def checkin_note(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    data = await state.get_data()
-    note = message.text if message.text != "Пропустить" else ""
-    hour = datetime.now().hour
-    if hour < 12:
-        time_slot = "утро"
-    elif hour < 18:
-        time_slot = "день"
-    else:
-        time_slot = "вечер"
-    db.add_checkin(
-        message.from_user.id,
-        time_slot,
-        data["energy"],
-        data["stress"],
-        data.get("emotions_list", []),
-        note
-    )
-    await message.answer("✅ Чек-ин сохранен!", reply_markup=get_main_menu())
-    await state.finish()
-
-# ========== ИТОГ ДНЯ ==========
-@dp.message_handler(text="📝 Итог дня")
-async def summary_start(message: types.Message):
-    await DaySummaryStates.score.set()
-    await message.answer("📝 Оценка дня? (1-10)", reply_markup=get_energy_stress_buttons())
-
-@dp.message_handler(state=DaySummaryStates.score)
-async def summary_score(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    await state.update_data(score=message.text)
-    await DaySummaryStates.next()
-    await message.answer("Что было лучшим?", reply_markup=get_skip_markup_text())
-
-@dp.message_handler(state=DaySummaryStates.best)
-async def summary_best(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    best = message.text if message.text != "Пропустить" else ""
-    await state.update_data(best=best)
-    await DaySummaryStates.next()
-    await message.answer("Что было худшим?", reply_markup=get_skip_markup_text())
-
-@dp.message_handler(state=DaySummaryStates.worst)
-async def summary_worst(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    worst = message.text if message.text != "Пропустить" else ""
-    await state.update_data(worst=worst)
-    await DaySummaryStates.next()
-    await message.answer("За что благодарен?", reply_markup=get_skip_markup_text())
-
-@dp.message_handler(state=DaySummaryStates.gratitude)
-async def summary_gratitude(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    gratitude = message.text if message.text != "Пропустить" else ""
-    await state.update_data(gratitude=gratitude)
-    await DaySummaryStates.next()
-    await message.answer("Заметка? (можно пропустить)", reply_markup=get_skip_markup_text())
-
-@dp.message_handler(state=DaySummaryStates.note)
-async def summary_note(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    data = await state.get_data()
-    note = message.text if message.text != "Пропустить" else ""
-    db.add_day_summary(message.from_user.id, data["score"], data["best"], data["worst"], data["gratitude"], note)
-    await message.answer("✅ Итог дня сохранен!", reply_markup=get_main_menu())
-    await state.finish()
-
-# ========== ЕДА ==========
-@dp.message_handler(text="🍽 Еда")
-async def food_start(message: types.Message):
-    await FoodStates.meal_type.set()
-    await message.answer("Что это за прием?", reply_markup=get_meal_type_buttons())
-
-@dp.message_handler(state=FoodStates.meal_type)
-async def food_meal_type(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    await state.update_data(meal_type=message.text)
-    await FoodStates.next()
-    await message.answer("Что съел?", reply_markup=get_main_menu())
-
-@dp.message_handler(state=FoodStates.food_text)
-async def food_text(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    db.add_food(message.from_user.id, data["meal_type"], message.text)
-    await message.answer(f"✅ Добавлено: {data['meal_type']} — {message.text}", reply_markup=get_main_menu())
-    await state.finish()
-
-# ========== НАПИТКИ ==========
-@dp.message_handler(text="🥤 Напитки")
-async def drink_start(message: types.Message):
-    await DrinkStates.drink_type.set()
-    await message.answer("Что выпил?", reply_markup=get_drink_type_buttons())
-
-@dp.message_handler(state=DrinkStates.drink_type)
-async def drink_type(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    await state.update_data(drink_type=message.text)
-    await DrinkStates.amount.set()
-    await message.answer("Сколько?", reply_markup=get_drink_amount_buttons())
-
-@dp.message_handler(state=DrinkStates.amount)
-async def drink_amount(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    if message.text == "Другое":
-        await message.answer("Введи количество (например: 0.5 л, 2 стакана):", reply_markup=types.ReplyKeyboardRemove())
-        return
-    data = await state.get_data()
-    drink_type = data["drink_type"]
-    amount = message.text
-    db.add_drink(message.from_user.id, drink_type, amount)
-    await message.answer(f"✅ Добавлено: {drink_type} — {amount}", reply_markup=get_main_menu())
-    await state.finish()
-
-@dp.message_handler(state=DrinkStates.amount)
-async def drink_amount_custom(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    drink_type = data["drink_type"]
-    amount = message.text
-    db.add_drink(message.from_user.id, drink_type, amount)
-    await message.answer(f"✅ Добавлено: {drink_type} — {amount}", reply_markup=get_main_menu())
-    await state.finish()
-
-# ========== МЫСЛИ (добавление) ==========
-@dp.message_handler(text="💭 Мысли")
-async def thought_start(message: types.Message):
-    await ThoughtStates.thought_text.set()
-    await message.answer("Какая мысль?", reply_markup=get_main_menu())
-
-@dp.message_handler(state=ThoughtStates.thought_text)
-async def thought_text(message: types.Message, state: FSMContext):
-    await state.update_data(thought_text=message.text)
-    await ThoughtStates.next()
-    await message.answer("Тип мысли?", reply_markup=get_thought_type_buttons())
-
-@dp.message_handler(state=ThoughtStates.thought_type)
-async def thought_type(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.finish()
-        await message.answer("❌ Отменено", reply_markup=get_main_menu())
-        return
-    await state.update_data(thought_type=message.text)
-    await ThoughtStates.next()
-    await message.answer("Что сделал с мыслью?", reply_markup=get_thought_action_buttons())
-
-@dp.message_handler(state=ThoughtStates.action)
-async def thought_action(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    db.add_thought(message.from_user.id, data["thought_text"], data["thought_type"], message.text)
-    await message.answer("✅ Мысль сохранена", reply_markup=get_main_menu())
-    await state.finish()
-
-# ========== СТАТИСТИКА ==========
-@dp.message_handler(text="📊 Статистика")
-async def stats(message: types.Message):
-    text = db.get_stats(message.from_user.id)
-    await message.answer(text, reply_markup=get_main_menu())
-
-# ========== ЭКСПОРТ ==========
-@dp.message_handler(text="📤 Экспорт")
-async def export(message: types.Message):
-    file_path = db.export_all(message.from_user.id)
-    with open(file_path, 'rb') as f:
-        await message.answer_document(f, caption="📁 Вот все твои данные")
-    await message.answer("Главное меню", reply_markup=get_main_menu())
-
-# ========== НАСТРОЙКИ ==========
-@dp.message_handler(text="⚙️ Настройки")
-async def settings(message: types.Message):
-    await message.answer(
-        "⚙️ Настройки\n\n"
-        "Выбери действие:",
-        reply_markup=get_settings_menu()
-    )
-
-@dp.message_handler(text="🔄 Сброс данных")
-async def reset_request(message: types.Message):
-    await message.answer(
-        "⚠️ ВНИМАНИЕ! Это действие удалит ВСЕ твои данные (сон, чек-ины, еду, мысли и т.д.).\n\n"
-        "Ты уверен?",
-        reply_markup=get_reset_confirm_keyboard()
-    )
-
-@dp.message_handler(text="❌ Назад")
-async def back_to_main(message: types.Message):
-    await message.answer("Главное меню", reply_markup=get_main_menu())
-
-@dp.callback_query_handler(lambda c: c.data == "reset_confirm")
-async def reset_confirm(callback_query: types.CallbackQuery):
-    user_id = callback_query.from_user.id
-    success = db.reset_user_data(user_id)
-    if success:
-        await callback_query.message.edit_text("✅ Все твои данные удалены.")
-    else:
-        await callback_query.message.edit_text("❌ Не удалось удалить данные (возможно, их и не было).")
-    await callback_query.answer()
-    await callback_query.message.answer("Главное меню", reply_markup=get_main_menu())
-
-@dp.callback_query_handler(lambda c: c.data == "reset_cancel")
-async def reset_cancel(callback_query: types.CallbackQuery):
-    await callback_query.message.edit_text("❌ Сброс отменён.")
-    await callback_query.answer()
-    await callback_query.message.answer("Главное меню", reply_markup=get_main_menu())
-
-# ========== УДАЛЕНИЕ МЫСЛЕЙ ==========
-@dp.callback_query_handler(lambda c: c.data.startswith("del_thought_"))
-async def delete_thought_callback(callback_query: types.CallbackQuery):
-    user_id = callback_query.from_user.id
-    idx_str = callback_query.data.split("_")[-1]
-    try:
-        idx = int(idx_str)
-    except ValueError:
-        await callback_query.answer("Ошибка", show_alert=True)
-        return
-
-    thoughts = db.get_thoughts(user_id)
-    if idx < 0 or idx >= len(thoughts):
-        await callback_query.answer("Мысль не найдена", show_alert=True)
-        return
-
-    success = db.delete_thought_by_index(user_id, idx)
-    if success:
-        await callback_query.answer("Мысль удалена", show_alert=False)
-        # Обновляем список мыслей
-        new_thoughts = db.get_thoughts(user_id)
-        if new_thoughts:
-            text = "💭 *Твои мысли (последние 10):*\n\n"
-            for i, thought in enumerate(reversed(new_thoughts)):
-                new_idx = len(new_thoughts) - 1 - i
-                text += f"{i+1}. *{thought['thought_type']}*: {thought['thought_text']}\n"
-                text += f"   📅 {thought['date']} {thought['time']} | Действие: {thought['action']}\n\n"
-            await callback_query.message.edit_text(text, parse_mode="Markdown", reply_markup=get_thoughts_list_keyboard(new_thoughts))
-        else:
-            await callback_query.message.edit_text("💭 У тебя больше нет сохранённых мыслей.", reply_markup=None)
-    else:
-        await callback_query.answer("Не удалось удалить", show_alert=True)
-
-@dp.callback_query_handler(lambda c: c.data == "close_thoughts")
-async def close_thoughts(callback_query: types.CallbackQuery):
-    await callback_query.message.delete()
-    await callback_query.answer()
-
-# ========== ЗАПУСК ==========
-from web import start_web
-
-async def on_startup(dp):
-    start_web()
-    print("🤖 Бот запущен!")
-
-if __name__ == "__main__":
-    executor.start_polling(dp, on_startup=on_startup)
+db = Database()
