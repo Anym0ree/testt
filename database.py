@@ -4,6 +4,7 @@ from datetime import datetime
 from config import DATA_FOLDER
 
 class Database:
+    
     def __init__(self):
         self.data_folder = DATA_FOLDER
 
@@ -173,5 +174,18 @@ class Database:
                 pass
             return True
         return False
+        def get_thoughts(self, user_id, limit=10):
+        """Возвращает последние мысли (список)"""
+        thoughts = self._load_json(user_id, "thoughts.json")
+        # Возвращаем последние limit штук
+        return thoughts[-limit:] if thoughts else []
 
+    def delete_thought_by_index(self, user_id, index):
+        """Удаляет мысль по индексу (отрицательный индекс с конца)"""
+        thoughts = self._load_json(user_id, "thoughts.json")
+        if 0 <= index < len(thoughts):
+            del thoughts[index]
+            self._save_json(user_id, "thoughts.json", thoughts)
+            return True
+        return False
 db = Database()
