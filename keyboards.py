@@ -57,7 +57,6 @@ def get_meal_type_buttons():
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 def get_drink_type_buttons():
-    # Убрали "Другое" из выбора типа
     buttons = [
         [KeyboardButton(text="💧 Вода"), KeyboardButton(text="☕️ Кофе")],
         [KeyboardButton(text="🍵 Чай"), KeyboardButton(text="🧃 Сок")],
@@ -117,7 +116,6 @@ def get_thoughts_list_keyboard(thoughts):
     """Создаёт инлайн-клавиатуру для списка мыслей с кнопками удаления"""
     buttons = []
     for i, thought in enumerate(thoughts):
-        # Ограничим текст мысли для кнопки
         text = thought['thought_text'][:30] + "..." if len(thought['thought_text']) > 30 else thought['thought_text']
         buttons.append([InlineKeyboardButton(text=f"🗑 {text}", callback_data=f"del_thought_{i}")])
     buttons.append([InlineKeyboardButton(text="❌ Закрыть", callback_data="close_thoughts")])
