@@ -8,7 +8,9 @@ def get_main_menu():
         [KeyboardButton(text="🍽 Еда")],
         [KeyboardButton(text="🥤 Напитки")],
         [KeyboardButton(text="💭 Мысли")],
-        [KeyboardButton(text="💭 Мои мысли")],  # новая кнопка
+        [KeyboardButton(text="💭 Мои мысли")],
+        [KeyboardButton(text="🍽 Еда сегодня")],
+        [KeyboardButton(text="🥤 Напитки сегодня")],
         [KeyboardButton(text="📊 Статистика")],
         [KeyboardButton(text="📤 Экспорт")],
         [KeyboardButton(text="⚙️ Настройки")]
@@ -17,8 +19,18 @@ def get_main_menu():
 
 def get_settings_menu():
     buttons = [
+        [KeyboardButton(text="🌍 Сменить город")],
         [KeyboardButton(text="🔄 Сброс данных")],
         [KeyboardButton(text="❌ Назад")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_timezone_buttons():
+    buttons = [
+        [KeyboardButton(text="Москва (UTC+3)"), KeyboardButton(text="Санкт-Петербург (UTC+3)")],
+        [KeyboardButton(text="Екатеринбург (UTC+5)"), KeyboardButton(text="Новосибирск (UTC+7)")],
+        [KeyboardButton(text="Владивосток (UTC+10)"), KeyboardButton(text="Калининград (UTC+2)")],
+        [KeyboardButton(text="Другое"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -113,7 +125,6 @@ def get_skip_markup_text():
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 def get_thoughts_list_keyboard(thoughts):
-    """Создаёт инлайн-клавиатуру для списка мыслей с кнопками удаления"""
     buttons = []
     for i, thought in enumerate(thoughts):
         text = thought['thought_text'][:30] + "..." if len(thought['thought_text']) > 30 else thought['thought_text']
