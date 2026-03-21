@@ -179,5 +179,32 @@ class Database:
                 pass
             return True
         return False
+def reset_user_data(self, user_id):
+        user_folder = self._get_user_folder(user_id)
+        if not os.path.exists(user_folder):
+            logging.info(f"Сброс данных: папка {user_folder} не существует")
+            return False
+
+        success = True
+        try:
+            for filename in os.listdir(user_folder):
+                file_path = os.path.join(user_folder, filename)
+                try:
+                    os.remove(file_path)
+                    logging.info(f"Удалён файл {file_path}")
+                except Exception as e:
+                    logging.error(f"Не удалось удалить {file_path}: {e}")
+                    success = False
+            # после удаления всех файлов попробуем удалить папку
+            try:
+                os.rmdir(user_folder)
+                logging.info(f"Удалена папка {user_folder}")
+            except Exception as e:
+                logging.warning(f"Не удалось удалить папку {user_folder}: {e}")
+        except Exception as e:
+            logging.error(f"Ошибка при сбросе данных: {e}")
+            return False
+
+        return success
 
 db = Database()
