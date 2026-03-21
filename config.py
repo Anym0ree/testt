@@ -1,7 +1,7 @@
 import os
 
 # СЮДА ВСТАВЬ ТОКЕН ОТ @BotFather
-BOT_TOKEN = "8774658045:AAHvlvChRK1-JVcLpcmPqQ-89lkY--W4rE8"
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 # Папка для хранения данных
 DATA_FOLDER = "user_data"
