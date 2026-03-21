@@ -1,7 +1,7 @@
 import json
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import DATA_FOLDER
 
 logging.basicConfig(level=logging.INFO)
@@ -31,11 +31,47 @@ class Database:
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
+    # === ЧАСОВОЙ ПОЯС ===
+    def set_user_timezone(self, user_id, timezone_offset):
+        """Сохраняет смещение часового пояса пользователя (в часах от UTC)"""
+        user_folder = self._get_user_folder(user_id)
+        file_path = os.path.join(user_folder, "user_settings.json")
+        settings = {}
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+        settings["timezone_offset"] = timezone_offset
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)
+
+    def get_user_timezone(self, user_id):
+        """Возвращает смещение часового пояса пользователя (в часах от UTC)"""
+        user_folder = self._get_user_folder(user_id)
+        file_path = os.path.join(user_folder, "user_settings.json")
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+                return settings.get("timezone_offset", 0)
+        return 0
+
+    def get_user_local_hour(self, user_id):
+        """Возвращает текущий час по локальному времени пользователя"""
+        offset = self.get_user_timezone(user_id)
+        utc_hour = datetime.utcnow().hour
+        local_hour = (utc_hour + offset) % 24
+        return local_hour
+
+    def get_user_local_date(self, user_id):
+        """Возвращает текущую дату по локальному времени пользователя"""
+        offset = self.get_user_timezone(user_id)
+        utc_now = datetime.utcnow()
+        local_now = utc_now + timedelta(hours=offset)
+        return local_now.strftime("%Y-%m-%d")
+
     # === СОН ===
     def has_sleep_today(self, user_id):
-        """Проверяет, есть ли запись сна за сегодня"""
         data = self._load_json(user_id, "sleep.json")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = self.get_user_local_date(user_id)
         for record in data:
             if record.get("date") == today:
                 return True
@@ -46,8 +82,8 @@ class Database:
             return False
         data = self._load_json(user_id, "sleep.json")
         record = {
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "timestamp": datetime.now().isoformat(),
+            "date": self.get_user_local_date(user_id),
+            "timestamp": datetime.utcnow().isoformat(),
             "bed_time": bed_time,
             "wake_time": wake_time,
             "quality": quality,
@@ -61,7 +97,7 @@ class Database:
     # === ИТОГ ДНЯ ===
     def has_day_summary_today(self, user_id):
         data = self._load_json(user_id, "day_summary.json")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = self.get_user_local_date(user_id)
         for record in data:
             if record.get("date") == today:
                 return True
@@ -70,13 +106,12 @@ class Database:
     def add_day_summary(self, user_id, score, best, worst, gratitude, note=""):
         if self.has_day_summary_today(user_id):
             return False
-        # Проверка времени (после 18:00 по серверному времени)
-        if datetime.now().hour < 18:
+        if self.get_user_local_hour(user_id) < 18:
             return False
         data = self._load_json(user_id, "day_summary.json")
         record = {
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "timestamp": datetime.now().isoformat(),
+            "date": self.get_user_local_date(user_id),
+            "timestamp": datetime.utcnow().isoformat(),
             "score": score,
             "best": best,
             "worst": worst,
@@ -91,9 +126,9 @@ class Database:
     def add_checkin(self, user_id, time_slot, energy, stress, emotions, note=""):
         data = self._load_json(user_id, "checkins.json")
         record = {
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "time": datetime.now().strftime("%H:%M"),
-            "timestamp": datetime.now().isoformat(),
+            "date": self.get_user_local_date(user_id),
+            "time": datetime.utcnow().strftime("%H:%M"),
+            "timestamp": datetime.utcnow().isoformat(),
             "time_slot": time_slot,
             "energy": energy,
             "stress": stress,
@@ -108,9 +143,9 @@ class Database:
     def add_food(self, user_id, meal_type, food_text):
         data = self._load_json(user_id, "food.json")
         record = {
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "time": datetime.now().strftime("%H:%M"),
-            "timestamp": datetime.now().isoformat(),
+            "date": self.get_user_local_date(user_id),
+            "time": datetime.utcnow().strftime("%H:%M"),
+            "timestamp": datetime.utcnow().isoformat(),
             "meal_type": meal_type,
             "food_text": food_text
         }
@@ -122,9 +157,9 @@ class Database:
     def add_drink(self, user_id, drink_type, amount):
         data = self._load_json(user_id, "drinks.json")
         record = {
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "time": datetime.now().strftime("%H:%M"),
-            "timestamp": datetime.now().isoformat(),
+            "date": self.get_user_local_date(user_id),
+            "time": datetime.utcnow().strftime("%H:%M"),
+            "timestamp": datetime.utcnow().isoformat(),
             "drink_type": drink_type,
             "amount": amount
         }
@@ -136,9 +171,9 @@ class Database:
     def add_thought(self, user_id, thought_text, thought_type, action):
         data = self._load_json(user_id, "thoughts.json")
         record = {
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "time": datetime.now().strftime("%H:%M"),
-            "timestamp": datetime.now().isoformat(),
+            "date": self.get_user_local_date(user_id),
+            "time": datetime.utcnow().strftime("%H:%M"),
+            "timestamp": datetime.utcnow().isoformat(),
             "thought_text": thought_text,
             "thought_type": thought_type,
             "action": action
@@ -158,6 +193,18 @@ class Database:
             self._save_json(user_id, "thoughts.json", thoughts)
             return True
         return False
+
+    # === СПИСОК ЕДЫ ЗА ДЕНЬ ===
+    def get_today_food(self, user_id):
+        food = self._load_json(user_id, "food.json")
+        today = self.get_user_local_date(user_id)
+        return [f for f in food if f.get("date") == today]
+
+    # === СПИСОК НАПИТКОВ ЗА ДЕНЬ ===
+    def get_today_drinks(self, user_id):
+        drinks = self._load_json(user_id, "drinks.json")
+        today = self.get_user_local_date(user_id)
+        return [d for d in drinks if d.get("date") == today]
 
     # === СТАТИСТИКА ===
     def get_stats(self, user_id):
@@ -188,7 +235,7 @@ class Database:
     def export_all(self, user_id):
         export_data = {
             "user_id": user_id,
-            "export_date": datetime.now().isoformat(),
+            "export_date": datetime.utcnow().isoformat(),
             "sleep": self._load_json(user_id, "sleep.json"),
             "checkins": self._load_json(user_id, "checkins.json"),
             "day_summary": self._load_json(user_id, "day_summary.json"),
