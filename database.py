@@ -1,8 +1,10 @@
 import json
 import os
+import logging
 from datetime import datetime
 from config import DATA_FOLDER
 
+logging.basicConfig(level=logging.INFO)
 class Database:
     def __init__(self):
         self.data_folder = DATA_FOLDER
