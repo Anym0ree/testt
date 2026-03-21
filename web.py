@@ -13,7 +13,6 @@ async def run_web(app):
     site = web.TCPSite(runner, '0.0.0.0', 8080)
     await site.start()
     logging.info("Web server started on port 8080")
-    # keep running
     await asyncio.Event().wait()
 
 async def start_web():
