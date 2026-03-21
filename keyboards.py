@@ -11,13 +11,129 @@ def get_main_menu():
         [KeyboardButton(text="💭 Мои мысли")],
         [KeyboardButton(text="🍽 Еда сегодня")],
         [KeyboardButton(text="🥤 Напитки сегодня")],
-        [KeyboardButton(text="📅 Напоминания")],  # новая кнопка
+        [KeyboardButton(text="📅 Напоминания")],
         [KeyboardButton(text="📊 Статистика")],
         [KeyboardButton(text="📤 Экспорт")],
         [KeyboardButton(text="⚙️ Настройки")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
+def get_settings_menu():
+    buttons = [
+        [KeyboardButton(text="🌍 Сменить город")],
+        [KeyboardButton(text="🔄 Сброс данных")],
+        [KeyboardButton(text="❌ Назад")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_reset_confirm_keyboard():
+    buttons = [
+        [InlineKeyboardButton(text="✅ Да, сбросить всё", callback_data="reset_confirm")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="reset_cancel")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_emotion_buttons():
+    buttons = [
+        [KeyboardButton(text="😊 Радость"), KeyboardButton(text="😠 Гнев")],
+        [KeyboardButton(text="😰 Тревога"), KeyboardButton(text="😌 Спокойствие")],
+        [KeyboardButton(text="😤 Раздражение"), KeyboardButton(text="😔 Грусть")],
+        [KeyboardButton(text="😐 Апатия"), KeyboardButton(text="😨 Страх")],
+        [KeyboardButton(text="😌 Облегчение"), KeyboardButton(text="😳 Стыд")],
+        [KeyboardButton(text="✨ Вдохновение"), KeyboardButton(text="✍️ Своя")],
+        [KeyboardButton(text="✅ Готово"), KeyboardButton(text="❌ Отмена")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_yes_no_buttons():
+    buttons = [
+        [KeyboardButton(text="✅ Да"), KeyboardButton(text="❌ Нет")],
+        [KeyboardButton(text="❌ Отмена")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_meal_type_buttons():
+    buttons = [
+        [KeyboardButton(text="🍳 Завтрак"), KeyboardButton(text="🍱 Обед")],
+        [KeyboardButton(text="🍲 Ужин"), KeyboardButton(text="🍎 Перекус")],
+        [KeyboardButton(text="❌ Отмена")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_drink_type_buttons():
+    buttons = [
+        [KeyboardButton(text="💧 Вода"), KeyboardButton(text="☕️ Кофе")],
+        [KeyboardButton(text="🍵 Чай"), KeyboardButton(text="🧃 Сок")],
+        [KeyboardButton(text="🍺 Алкоголь"), KeyboardButton(text="⚡️ Энергетик")],
+        [KeyboardButton(text="❌ Отмена")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_drink_amount_buttons():
+    buttons = [
+        [KeyboardButton(text="1 чашка"), KeyboardButton(text="2 чашки")],
+        [KeyboardButton(text="3+ чашек"), KeyboardButton(text="200 мл")],
+        [KeyboardButton(text="300 мл"), KeyboardButton(text="500 мл")],
+        [KeyboardButton(text="1 л"), KeyboardButton(text="Другое")],
+        [KeyboardButton(text="❌ Отмена")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_thought_type_buttons():
+    buttons = [
+        [KeyboardButton(text="😰 Тревожная"), KeyboardButton(text="🤬 Критическая")],
+        [KeyboardButton(text="🔄 Повторяющаяся"), KeyboardButton(text="💡 Инсайт")],
+        [KeyboardButton(text="✨ Вдохновляющая"), KeyboardButton(text="❌ Отмена")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_thought_action_buttons():
+    buttons = [
+        [KeyboardButton(text="🔄 Зациклился"), KeyboardButton(text="👋 Отпустил")],
+        [KeyboardButton(text="📝 Записал"), KeyboardButton(text="🗣 Рассказал")],
+        [KeyboardButton(text="❌ Отмена")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_energy_stress_buttons():
+    row = [KeyboardButton(text=str(i)) for i in range(1, 6)]
+    row2 = [KeyboardButton(text=str(i)) for i in range(6, 11)]
+    buttons = [row, row2, [KeyboardButton(text="❌ Отмена")]]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_time_buttons():
+    buttons = [
+        [KeyboardButton(text="22:00"), KeyboardButton(text="23:00")],
+        [KeyboardButton(text="00:00"), KeyboardButton(text="01:00")],
+        [KeyboardButton(text="02:00"), KeyboardButton(text="03:00")],
+        [KeyboardButton(text="Другое"), KeyboardButton(text="❌ Отмена")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_skip_markup_text():
+    buttons = [
+        [KeyboardButton(text="Пропустить"), KeyboardButton(text="❌ Отмена")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_thoughts_list_keyboard(thoughts):
+    buttons = []
+    for i, thought in enumerate(thoughts):
+        text = thought['thought_text'][:30] + "..." if len(thought['thought_text']) > 30 else thought['thought_text']
+        buttons.append([InlineKeyboardButton(text=f"🗑 {text}", callback_data=f"del_thought_{i}")])
+    buttons.append([InlineKeyboardButton(text="❌ Закрыть", callback_data="close_thoughts")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_timezone_buttons():
+    buttons = [
+        [KeyboardButton(text="Москва (UTC+3)"), KeyboardButton(text="Санкт-Петербург (UTC+3)")],
+        [KeyboardButton(text="Екатеринбург (UTC+5)"), KeyboardButton(text="Новосибирск (UTC+7)")],
+        [KeyboardButton(text="Владивосток (UTC+10)"), KeyboardButton(text="Калининград (UTC+2)")],
+        [KeyboardButton(text="Другое"), KeyboardButton(text="❌ Отмена")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+# ========== КЛАВИАТУРЫ ДЛЯ НАПОМИНАНИЙ ==========
 def get_reminder_menu():
     buttons = [
         [KeyboardButton(text="➕ Добавить")],
@@ -25,14 +141,6 @@ def get_reminder_menu():
         [KeyboardButton(text="⬅️ Назад")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
-
-def get_reminder_action_keyboard(reminder_id):
-    buttons = [
-        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"reminder_delete_{reminder_id}")],
-        [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"reminder_edit_{reminder_id}")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="reminder_back_to_list")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_reminder_date_buttons():
     buttons = [
@@ -78,6 +186,14 @@ def get_reminder_list_keyboard(reminders):
     buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="reminder_back_to_menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+def get_reminder_action_keyboard(reminder_id):
+    buttons = [
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"reminder_delete_{reminder_id}")],
+        [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"reminder_edit_{reminder_id}")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="reminder_back_to_list")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 def get_reminder_edit_keyboard():
     buttons = [
         [InlineKeyboardButton(text="✏️ Изменить текст", callback_data="reminder_edit_text")],
@@ -86,4 +202,6 @@ def get_reminder_edit_keyboard():
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-# Остальные функции (get_settings_menu, get_reset_confirm_keyboard и т.д.) остаются без изменений
+def get_back_button():
+    buttons = [[KeyboardButton(text="⬅️ Назад")]]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
