@@ -198,7 +198,7 @@ def get_reminder_edit_keyboard():
     buttons = [
         [InlineKeyboardButton(text="✏️ Изменить текст", callback_data="reminder_edit_text")],
         [InlineKeyboardButton(text="🕐 Изменить время", callback_data="reminder_edit_time")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="reminder_back_to_action")]
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="reminder_back_to_list")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
