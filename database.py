@@ -5,6 +5,7 @@ from datetime import datetime
 from config import DATA_FOLDER
 
 logging.basicConfig(level=logging.INFO)
+
 class Database:
     def __init__(self):
         self.data_folder = DATA_FOLDER
@@ -30,7 +31,19 @@ class Database:
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
+    # === СОН ===
+    def has_sleep_today(self, user_id):
+        """Проверяет, есть ли запись сна за сегодня"""
+        data = self._load_json(user_id, "sleep.json")
+        today = datetime.now().strftime("%Y-%m-%d")
+        for record in data:
+            if record.get("date") == today:
+                return True
+        return False
+
     def add_sleep(self, user_id, bed_time, wake_time, quality, woke_night, note=""):
+        if self.has_sleep_today(user_id):
+            return False
         data = self._load_json(user_id, "sleep.json")
         record = {
             "date": datetime.now().strftime("%Y-%m-%d"),
@@ -43,7 +56,38 @@ class Database:
         }
         data.append(record)
         self._save_json(user_id, "sleep.json", data)
+        return True
 
+    # === ИТОГ ДНЯ ===
+    def has_day_summary_today(self, user_id):
+        data = self._load_json(user_id, "day_summary.json")
+        today = datetime.now().strftime("%Y-%m-%d")
+        for record in data:
+            if record.get("date") == today:
+                return True
+        return False
+
+    def add_day_summary(self, user_id, score, best, worst, gratitude, note=""):
+        if self.has_day_summary_today(user_id):
+            return False
+        # Проверка времени (после 18:00 по серверному времени)
+        if datetime.now().hour < 18:
+            return False
+        data = self._load_json(user_id, "day_summary.json")
+        record = {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "timestamp": datetime.now().isoformat(),
+            "score": score,
+            "best": best,
+            "worst": worst,
+            "gratitude": gratitude,
+            "note": note
+        }
+        data.append(record)
+        self._save_json(user_id, "day_summary.json", data)
+        return True
+
+    # === ЧЕК-ИН ===
     def add_checkin(self, user_id, time_slot, energy, stress, emotions, note=""):
         data = self._load_json(user_id, "checkins.json")
         record = {
@@ -58,21 +102,9 @@ class Database:
         }
         data.append(record)
         self._save_json(user_id, "checkins.json", data)
+        return True
 
-    def add_day_summary(self, user_id, score, best, worst, gratitude, note=""):
-        data = self._load_json(user_id, "day_summary.json")
-        record = {
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "timestamp": datetime.now().isoformat(),
-            "score": score,
-            "best": best,
-            "worst": worst,
-            "gratitude": gratitude,
-            "note": note
-        }
-        data.append(record)
-        self._save_json(user_id, "day_summary.json", data)
-
+    # === ЕДА ===
     def add_food(self, user_id, meal_type, food_text):
         data = self._load_json(user_id, "food.json")
         record = {
@@ -84,7 +116,9 @@ class Database:
         }
         data.append(record)
         self._save_json(user_id, "food.json", data)
+        return True
 
+    # === НАПИТКИ ===
     def add_drink(self, user_id, drink_type, amount):
         data = self._load_json(user_id, "drinks.json")
         record = {
@@ -96,7 +130,9 @@ class Database:
         }
         data.append(record)
         self._save_json(user_id, "drinks.json", data)
+        return True
 
+    # === МЫСЛИ ===
     def add_thought(self, user_id, thought_text, thought_type, action):
         data = self._load_json(user_id, "thoughts.json")
         record = {
@@ -109,14 +145,13 @@ class Database:
         }
         data.append(record)
         self._save_json(user_id, "thoughts.json", data)
+        return True
 
     def get_thoughts(self, user_id, limit=10):
-        """Возвращает последние мысли (список)"""
         thoughts = self._load_json(user_id, "thoughts.json")
         return thoughts[-limit:] if thoughts else []
 
     def delete_thought_by_index(self, user_id, index):
-        """Удаляет мысль по индексу (отрицательный индекс с конца)"""
         thoughts = self._load_json(user_id, "thoughts.json")
         if 0 <= index < len(thoughts):
             del thoughts[index]
@@ -124,6 +159,7 @@ class Database:
             return True
         return False
 
+    # === СТАТИСТИКА ===
     def get_stats(self, user_id):
         sleep = self._load_json(user_id, "sleep.json")
         checkins = self._load_json(user_id, "checkins.json")
@@ -148,6 +184,7 @@ class Database:
 
         return text
 
+    # === ЭКСПОРТ ===
     def export_all(self, user_id):
         export_data = {
             "user_id": user_id,
@@ -166,22 +203,8 @@ class Database:
 
         return file_path
 
+    # === СБРОС ===
     def reset_user_data(self, user_id):
-        user_folder = self._get_user_folder(user_id)
-        if os.path.exists(user_folder):
-            for filename in os.listdir(user_folder):
-                file_path = os.path.join(user_folder, filename)
-                try:
-                    os.remove(file_path)
-                except Exception:
-                    pass
-            try:
-                os.rmdir(user_folder)
-            except Exception:
-                pass
-            return True
-        return False
-def reset_user_data(self, user_id):
         user_folder = self._get_user_folder(user_id)
         if not os.path.exists(user_folder):
             logging.info(f"Сброс данных: папка {user_folder} не существует")
@@ -197,7 +220,6 @@ def reset_user_data(self, user_id):
                 except Exception as e:
                     logging.error(f"Не удалось удалить {file_path}: {e}")
                     success = False
-            # после удаления всех файлов попробуем удалить папку
             try:
                 os.rmdir(user_folder)
                 logging.info(f"Удалена папка {user_folder}")
