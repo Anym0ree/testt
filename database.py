@@ -342,6 +342,16 @@ class Database:
         self._save_json(user_id, "reminders.json", reminders)
         return True
 
+    def update_reminder_time(self, user_id, reminder_id, new_date, new_time):
+        reminders = self._load_json(user_id, "reminders.json")
+        for r in reminders:
+            if r.get("id") == reminder_id:
+                r["date"] = new_date
+                r["time"] = new_time
+                break
+        self._save_json(user_id, "reminders.json", reminders)
+        return True
+
     def get_reminder_by_id(self, user_id, reminder_id):
         reminders = self._load_json(user_id, "reminders.json")
         for r in reminders:
