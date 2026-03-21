@@ -11,7 +11,6 @@ from config import BOT_TOKEN
 from database import db
 from keyboards import *
 
-# Логирование
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
@@ -29,7 +28,7 @@ class SleepStates(StatesGroup):
 class CheckinStates(StatesGroup):
     energy = State()
     stress = State()
-    emotion = State()
+    emotions = State()
     note = State()
 
 class DaySummaryStates(StatesGroup):
@@ -89,6 +88,15 @@ async def sleep_bed_time(message: types.Message, state: FSMContext):
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
         return
+    if message.text == "Другое":
+        await message.answer("Введи время в формате ЧЧ:ММ (например 23:45):", reply_markup=types.ReplyKeyboardRemove())
+        return
+    await state.update_data(bed_time=message.text)
+    await SleepStates.next()
+    await message.answer("Во сколько встал?", reply_markup=get_time_buttons())
+
+@dp.message_handler(state=SleepStates.bed_time)
+async def sleep_bed_time_custom(message: types.Message, state: FSMContext):
     await state.update_data(bed_time=message.text)
     await SleepStates.next()
     await message.answer("Во сколько встал?", reply_markup=get_time_buttons())
@@ -99,6 +107,15 @@ async def sleep_wake_time(message: types.Message, state: FSMContext):
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
         return
+    if message.text == "Другое":
+        await message.answer("Введи время в формате ЧЧ:ММ (например 09:15):", reply_markup=types.ReplyKeyboardRemove())
+        return
+    await state.update_data(wake_time=message.text)
+    await SleepStates.next()
+    await message.answer("Качество сна? (1-10)", reply_markup=get_energy_stress_buttons())
+
+@dp.message_handler(state=SleepStates.wake_time)
+async def sleep_wake_time_custom(message: types.Message, state: FSMContext):
     await state.update_data(wake_time=message.text)
     await SleepStates.next()
     await message.answer("Качество сна? (1-10)", reply_markup=get_energy_stress_buttons())
@@ -166,17 +183,47 @@ async def checkin_stress(message: types.Message, state: FSMContext):
         return
     await state.update_data(stress=message.text)
     await CheckinStates.next()
-    await message.answer("Какая эмоция?", reply_markup=get_emotion_buttons())
+    await state.update_data(emotions_list=[])
+    await message.answer(
+        "Выбери эмоции (можно несколько). Когда закончишь, нажми '✅ Готово':",
+        reply_markup=get_emotion_buttons()
+    )
 
-@dp.message_handler(state=CheckinStates.emotion)
-async def checkin_emotion(message: types.Message, state: FSMContext):
+@dp.message_handler(state=CheckinStates.emotions)
+async def checkin_emotions(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
         return
-    await state.update_data(emotion=message.text)
-    await CheckinStates.next()
-    await message.answer("Заметка? (можно пропустить)", reply_markup=get_skip_markup_text())
+    if message.text == "✅ Готово":
+        data = await state.get_data()
+        emotions = data.get("emotions_list", [])
+        if not emotions:
+            await message.answer("Выбери хотя бы одну эмоцию или нажми 'Отмена'", reply_markup=get_emotion_buttons())
+            return
+        await CheckinStates.next()
+        await message.answer("Заметка? (можно пропустить)", reply_markup=get_skip_markup_text())
+        return
+    if message.text == "✍️ Своя":
+        await message.answer("Напиши свою эмоцию:", reply_markup=types.ReplyKeyboardRemove())
+        return
+    
+    data = await state.get_data()
+    emotions_list = data.get("emotions_list", [])
+    if message.text not in emotions_list:
+        emotions_list.append(message.text)
+        await state.update_data(emotions_list=emotions_list)
+        await message.answer(f"✅ Добавлено: {message.text}\nВыбрано: {', '.join(emotions_list)}", reply_markup=get_emotion_buttons())
+    else:
+        await message.answer(f"⚠️ Эмоция '{message.text}' уже добавлена", reply_markup=get_emotion_buttons())
+
+@dp.message_handler(state=CheckinStates.emotions)
+async def checkin_emotions_custom(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    emotions_list = data.get("emotions_list", [])
+    emotions_list.append(message.text)
+    await state.update_data(emotions_list=emotions_list)
+    await message.answer(f"✅ Добавлено: {message.text}\nВыбрано: {', '.join(emotions_list)}", reply_markup=get_emotion_buttons())
 
 @dp.message_handler(state=CheckinStates.note)
 async def checkin_note(message: types.Message, state: FSMContext):
@@ -193,7 +240,14 @@ async def checkin_note(message: types.Message, state: FSMContext):
         time_slot = "день"
     else:
         time_slot = "вечер"
-    db.add_checkin(message.from_user.id, time_slot, data["energy"], data["stress"], data["emotion"], note)
+    db.add_checkin(
+        message.from_user.id,
+        time_slot,
+        data["energy"],
+        data["stress"],
+        data.get("emotions_list", []),
+        note
+    )
     await message.answer("✅ Чек-ин сохранен!", reply_markup=get_main_menu())
     await state.finish()
 
@@ -297,7 +351,7 @@ async def drink_type(message: types.Message, state: FSMContext):
     await state.update_data(drink_type=drink)
 
     if drink == "🔄 Другое":
-        await message.answer("Напиши, что именно и сколько (например: 'энергетик 0.5л')", reply_markup=get_main_menu())
+        await message.answer("Напиши, что именно и сколько (например: 'энергетик 0.5л')", reply_markup=types.ReplyKeyboardRemove())
         await DrinkStates.amount.set()
     else:
         await DrinkStates.amount.set()
@@ -396,6 +450,7 @@ async def reset_cancel(callback_query: types.CallbackQuery):
     await callback_query.message.edit_text("❌ Сброс отменён.")
     await callback_query.answer()
     await callback_query.message.answer("Главное меню", reply_markup=get_main_menu())
+
 # ========== ЗАПУСК ==========
 from web import start_web
 
@@ -404,5 +459,4 @@ async def on_startup(dp):
     print("🤖 Бот запущен!")
 
 if __name__ == "__main__":
-    from aiogram.utils import executor
     executor.start_polling(dp, on_startup=on_startup)
