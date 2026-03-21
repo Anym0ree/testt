@@ -397,6 +397,10 @@ async def drink_amount_custom(message: types.Message, state: FSMContext):
 async def thought_start(message: types.Message):
     await ThoughtStates.thought_text.set()
     await message.answer("Какая мысль?", reply_markup=get_main_menu())
+@dp.message_handler(text="💭 Мысли")
+async def thought_start(message: types.Message):
+    await ThoughtStates.thought_text.set()
+    await message.answer("Какая мысль?", reply_markup=get_main_menu())
 
 @dp.message_handler(state=ThoughtStates.thought_text)
 async def thought_text(message: types.Message, state: FSMContext):
@@ -434,7 +438,10 @@ async def export(message: types.Message):
     with open(file_path, 'rb') as f:
         await message.answer_document(f, caption="📁 Вот все твои данные")
     await message.answer("Главное меню", reply_markup=get_main_menu())
-
+# ========== ПРОСМОТР МЫСЛЕЙ (через кнопку) ==========
+@dp.message_handler(text="💭 Мои мысли")
+async def show_thoughts_button(message: types.Message):
+    await cmd_thoughts(message)   # вызываем ту же функцию, что и для /thoughts
 # ========== НАСТРОЙКИ ==========
 @dp.message_handler(text="⚙️ Настройки")
 async def settings(message: types.Message):
@@ -520,3 +527,4 @@ async def on_startup(dp):
 
 if __name__ == "__main__":
     executor.start_polling(dp, on_startup=on_startup)
+
