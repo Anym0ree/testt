@@ -8,10 +8,8 @@ def get_main_menu():
         [KeyboardButton(text="🍽 Еда")],
         [KeyboardButton(text="🥤 Напитки")],
         [KeyboardButton(text="💭 Мысли")],
-        [KeyboardButton(text="💭 Мои мысли")],
-        [KeyboardButton(text="🍽 Еда сегодня")],
-        [KeyboardButton(text="🥤 Напитки сегодня")],
         [KeyboardButton(text="📅 Напоминания")],
+        [KeyboardButton(text="📋 Мои записи")],
         [KeyboardButton(text="📊 Статистика")],
         [KeyboardButton(text="📤 Экспорт")],
         [KeyboardButton(text="⚙️ Настройки")]
@@ -130,6 +128,16 @@ def get_timezone_buttons():
         [KeyboardButton(text="Екатеринбург (UTC+5)"), KeyboardButton(text="Новосибирск (UTC+7)")],
         [KeyboardButton(text="Владивосток (UTC+10)"), KeyboardButton(text="Калининград (UTC+2)")],
         [KeyboardButton(text="Другое"), KeyboardButton(text="❌ Отмена")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+# ========== КЛАВИАТУРЫ ДЛЯ МОИ ЗАПИСИ ==========
+def get_record_type_keyboard():
+    buttons = [
+        [KeyboardButton(text="💭 Мысли"), KeyboardButton(text="📅 Напоминания")],
+        [KeyboardButton(text="😴 Сон"), KeyboardButton(text="⚡️ Чек-ины")],
+        [KeyboardButton(text="📝 Итоги дня"), KeyboardButton(text="🍽 Еда")],
+        [KeyboardButton(text="🥤 Напитки"), KeyboardButton(text="⬅️ Назад")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
