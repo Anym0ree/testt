@@ -31,6 +31,11 @@ class Database:
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
+    def _get_all_user_folders(self):
+        if not os.path.exists(self.data_folder):
+            return []
+        return [int(folder) for folder in os.listdir(self.data_folder) if folder.isdigit()]
+
     # === ЧАСОВОЙ ПОЯС ===
     def set_user_timezone(self, user_id, timezone_offset):
         user_folder = self._get_user_folder(user_id)
@@ -178,6 +183,155 @@ class Database:
         self._save_json(user_id, "drinks.json", data)
         return True
 
+    # === ЗАМЕТКИ ===
+    def add_note(self, user_id, text):
+        data = self._load_json(user_id, "notes.json")
+        note_id = len(data) + 1
+        record = {
+            "id": note_id,
+            "text": text,
+            "date": self.get_user_local_date(user_id),
+            "time": datetime.utcnow().strftime("%H:%M"),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        data.append(record)
+        self._save_json(user_id, "notes.json", data)
+        return note_id
+
+    def get_notes(self, user_id):
+        return self._load_json(user_id, "notes.json")
+
+    def delete_note_by_id(self, user_id, note_id):
+        notes = self._load_json(user_id, "notes.json")
+        new_notes = [n for n in notes if n.get("id") != note_id]
+        if len(new_notes) != len(notes):
+            self._save_json(user_id, "notes.json", new_notes)
+            return True
+        return False
+
+    # === НАПОМИНАНИЯ ===
+    def add_reminder(self, user_id, text, target_date, target_time, advance_type=None):
+        reminders = self._load_json(user_id, "reminders.json")
+        reminder_id = len(reminders) + 1
+        reminder = {
+            "id": reminder_id,
+            "text": text,
+            "date": target_date,
+            "time": target_time,
+            "advance_type": advance_type,
+            "is_active": True,
+            "created_at": datetime.utcnow().isoformat()
+        }
+        reminders.append(reminder)
+        self._save_json(user_id, "reminders.json", reminders)
+
+        if advance_type:
+            advance_reminder = {
+                "id": reminder_id + 1000,
+                "text": f"⚠️ ЗА ДЕНЬ: {text}" if advance_type == "day" else f"⚠️ ЗА 3 ЧАСА: {text}" if advance_type == "3h" else f"⚠️ ЗА 1 ЧАС: {text}",
+                "date": self._get_advance_date(target_date, advance_type),
+                "time": target_time,
+                "advance_type": None,
+                "is_active": True,
+                "parent_id": reminder_id,
+                "created_at": datetime.utcnow().isoformat()
+            }
+            reminders.append(advance_reminder)
+            self._save_json(user_id, "reminders.json", reminders)
+
+        return reminder_id
+
+    def _get_advance_date(self, target_date, advance_type):
+        target = datetime.strptime(target_date, "%Y-%m-%d")
+        if advance_type == "day":
+            advance = target - timedelta(days=1)
+        elif advance_type == "3h":
+            advance = target - timedelta(hours=3)
+        elif advance_type == "1h":
+            advance = target - timedelta(hours=1)
+        else:
+            return target_date
+        return advance.strftime("%Y-%m-%d")
+
+    def get_active_reminders(self, user_id):
+        reminders = self._load_json(user_id, "reminders.json")
+        return [r for r in reminders if r.get("is_active", True)]
+
+    def delete_reminder(self, user_id, reminder_id):
+        reminders = self._load_json(user_id, "reminders.json")
+        for r in reminders:
+            if r.get("id") == reminder_id:
+                r["is_active"] = False
+                break
+        self._save_json(user_id, "reminders.json", reminders)
+        return True
+
+    def update_reminder_text(self, user_id, reminder_id, new_text):
+        reminders = self._load_json(user_id, "reminders.json")
+        for r in reminders:
+            if r.get("id") == reminder_id:
+                r["text"] = new_text
+                break
+        self._save_json(user_id, "reminders.json", reminders)
+        return True
+
+    def update_reminder_time(self, user_id, reminder_id, new_date, new_time):
+        reminders = self._load_json(user_id, "reminders.json")
+        for r in reminders:
+            if r.get("id") == reminder_id:
+                r["date"] = new_date
+                r["time"] = new_time
+                break
+        self._save_json(user_id, "reminders.json", reminders)
+        return True
+
+    def get_reminder_by_id(self, user_id, reminder_id):
+        reminders = self._load_json(user_id, "reminders.json")
+        for r in reminders:
+            if r.get("id") == reminder_id:
+                return r
+        return None
+
+    # === УВЕДОМЛЕНИЯ (проверка) ===
+    def get_reminders_due_now(self):
+        """Возвращает список (user_id, reminder) активных напоминаний, которые должны быть отправлены в текущую минуту."""
+        all_users = self._get_all_user_folders()
+        due = []
+        for user_id in all_users:
+            reminders = self._load_json(user_id, "reminders.json")
+            local_date = self.get_user_local_date(user_id)
+            local_time = datetime.utcnow() + timedelta(hours=self.get_user_timezone(user_id))
+            local_minute = local_time.strftime("%H:%M")
+            for r in reminders:
+                if r.get("is_active", True):
+                    if r["date"] == local_date and r["time"] == local_minute:
+                        due.append((user_id, r))
+        return due
+
+    def mark_reminder_sent(self, user_id, reminder_id):
+        reminders = self._load_json(user_id, "reminders.json")
+        for r in reminders:
+            if r.get("id") == reminder_id:
+                r["is_active"] = False
+                break
+        self._save_json(user_id, "reminders.json", reminders)
+
+    # === СПИСОК ЕДЫ ЗА ДЕНЬ ===
+    def get_today_food(self, user_id):
+        food = self._load_json(user_id, "food.json")
+        today = self.get_user_local_date(user_id)
+        today_food = [f for f in food if f.get("date") == today]
+        today_food.sort(key=lambda x: x.get('time', '00:00'))
+        return today_food
+
+    # === СПИСОК НАПИТКОВ ЗА ДЕНЬ ===
+    def get_today_drinks(self, user_id):
+        drinks = self._load_json(user_id, "drinks.json")
+        today = self.get_user_local_date(user_id)
+        today_drinks = [d for d in drinks if d.get("date") == today]
+        today_drinks.sort(key=lambda x: x.get('time', '00:00'))
+        return today_drinks
+
     # === СТАТИСТИКА ===
     def get_stats(self, user_id):
         sleep = self._load_json(user_id, "sleep.json")
@@ -252,131 +406,5 @@ class Database:
             return False
 
         return success
-
-    # === ЗАМЕТКИ ===
-    def add_note(self, user_id, text):
-        data = self._load_json(user_id, "notes.json")
-        note_id = len(data) + 1
-        record = {
-            "id": note_id,
-            "text": text,
-            "date": self.get_user_local_date(user_id),
-            "time": datetime.utcnow().strftime("%H:%M"),
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        data.append(record)
-        self._save_json(user_id, "notes.json", data)
-        return note_id
-
-    def get_notes(self, user_id):
-        return self._load_json(user_id, "notes.json")
-
-    def delete_note_by_id(self, user_id, note_id):
-        notes = self._load_json(user_id, "notes.json")
-        new_notes = [n for n in notes if n.get("id") != note_id]
-        if len(new_notes) != len(notes):
-            self._save_json(user_id, "notes.json", new_notes)
-            return True
-        return False
-
-    # === НАПОМИНАНИЯ ===
-    def add_reminder(self, user_id, text, target_date, target_time, advance_type=None):
-        reminders = self._load_json(user_id, "reminders.json")
-        reminder_id = len(reminders) + 1
-        reminder = {
-            "id": reminder_id,
-            "text": text,
-            "date": target_date,
-            "time": target_time,
-            "advance_type": advance_type,
-            "is_active": True,
-            "created_at": datetime.utcnow().isoformat()
-        }
-        reminders.append(reminder)
-        self._save_json(user_id, "reminders.json", reminders)
-
-        # Предварительное напоминание (если нужно)
-        if advance_type:
-            advance_reminder = {
-                "id": reminder_id + 1000,
-                "text": f"⚠️ ЗА ДЕНЬ: {text}" if advance_type == "day" else f"⚠️ ЗА 3 ЧАСА: {text}" if advance_type == "3h" else f"⚠️ ЗА 1 ЧАС: {text}",
-                "date": self._get_advance_date(target_date, advance_type),
-                "time": target_time,
-                "advance_type": None,
-                "is_active": True,
-                "parent_id": reminder_id,
-                "created_at": datetime.utcnow().isoformat()
-            }
-            reminders.append(advance_reminder)
-            self._save_json(user_id, "reminders.json", reminders)
-
-        return reminder_id
-
-    def _get_advance_date(self, target_date, advance_type):
-        target = datetime.strptime(target_date, "%Y-%m-%d")
-        if advance_type == "day":
-            advance = target - timedelta(days=1)
-        elif advance_type == "3h":
-            advance = target - timedelta(hours=3)
-        elif advance_type == "1h":
-            advance = target - timedelta(hours=1)
-        else:
-            return target_date
-        return advance.strftime("%Y-%m-%d")
-
-    def get_active_reminders(self, user_id):
-        reminders = self._load_json(user_id, "reminders.json")
-        return [r for r in reminders if r.get("is_active", True)]
-
-    def delete_reminder(self, user_id, reminder_id):
-        reminders = self._load_json(user_id, "reminders.json")
-        for r in reminders:
-            if r.get("id") == reminder_id:
-                r["is_active"] = False
-                break
-        self._save_json(user_id, "reminders.json", reminders)
-        return True
-
-    def update_reminder_text(self, user_id, reminder_id, new_text):
-        reminders = self._load_json(user_id, "reminders.json")
-        for r in reminders:
-            if r.get("id") == reminder_id:
-                r["text"] = new_text
-                break
-        self._save_json(user_id, "reminders.json", reminders)
-        return True
-
-    def update_reminder_time(self, user_id, reminder_id, new_date, new_time):
-        reminders = self._load_json(user_id, "reminders.json")
-        for r in reminders:
-            if r.get("id") == reminder_id:
-                r["date"] = new_date
-                r["time"] = new_time
-                break
-        self._save_json(user_id, "reminders.json", reminders)
-        return True
-
-    def get_reminder_by_id(self, user_id, reminder_id):
-        reminders = self._load_json(user_id, "reminders.json")
-        for r in reminders:
-            if r.get("id") == reminder_id:
-                return r
-        return None
-
-    # === СПИСОК ЕДЫ ЗА ДЕНЬ ===
-    def get_today_food(self, user_id):
-        food = self._load_json(user_id, "food.json")
-        today = self.get_user_local_date(user_id)
-        today_food = [f for f in food if f.get("date") == today]
-        today_food.sort(key=lambda x: x.get('time', '00:00'))
-        return today_food
-
-    # === СПИСОК НАПИТКОВ ЗА ДЕНЬ ===
-    def get_today_drinks(self, user_id):
-        drinks = self._load_json(user_id, "drinks.json")
-        today = self.get_user_local_date(user_id)
-        today_drinks = [d for d in drinks if d.get("date") == today]
-        today_drinks.sort(key=lambda x: x.get('time', '00:00'))
-        return today_drinks
 
 db = Database()
