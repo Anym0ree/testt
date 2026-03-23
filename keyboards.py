@@ -131,7 +131,6 @@ def get_timezone_buttons():
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
-# ========== КЛАВИАТУРЫ ДЛЯ МОИ ЗАПИСИ ==========
 def get_record_type_keyboard():
     buttons = [
         [KeyboardButton(text="💭 Мысли"), KeyboardButton(text="📅 Напоминания")],
@@ -141,7 +140,6 @@ def get_record_type_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
-# ========== КЛАВИАТУРЫ ДЛЯ НАПОМИНАНИЙ ==========
 def get_reminder_menu():
     buttons = [
         [KeyboardButton(text="➕ Добавить")],
