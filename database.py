@@ -92,9 +92,8 @@ class Database:
         self._save_json(user_id, "sleep.json", data)
         return True
 
-    # === ИТОГ ДНЯ (НОВАЯ ЛОГИКА) ===
+    # === ИТОГ ДНЯ ===
     def get_target_date_for_summary(self, user_id):
-        """Возвращает дату, за которую нужно записать итог дня (вчера, если время до 6 утра)"""
         local_hour = self.get_user_local_hour(user_id)
         if local_hour >= 18:
             return self.get_user_local_date(user_id)
