@@ -108,6 +108,16 @@ def get_time_buttons():
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
+def get_morning_time_buttons():
+    buttons = [
+        [KeyboardButton(text="06:00"), KeyboardButton(text="07:00")],
+        [KeyboardButton(text="08:00"), KeyboardButton(text="09:00")],
+        [KeyboardButton(text="10:00"), KeyboardButton(text="11:00")],
+        [KeyboardButton(text="12:00"), KeyboardButton(text="Другое")],
+        [KeyboardButton(text="❌ Отмена")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
 def get_skip_markup_text():
     buttons = [
         [KeyboardButton(text="Пропустить"), KeyboardButton(text="❌ Отмена")]
