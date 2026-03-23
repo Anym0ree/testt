@@ -92,23 +92,37 @@ class Database:
         self._save_json(user_id, "sleep.json", data)
         return True
 
-    # === ИТОГ ДНЯ ===
-    def has_day_summary_today(self, user_id):
+    # === ИТОГ ДНЯ (НОВАЯ ЛОГИКА) ===
+    def get_target_date_for_summary(self, user_id):
+        """Возвращает дату, за которую нужно записать итог дня (вчера, если время до 6 утра)"""
+        local_hour = self.get_user_local_hour(user_id)
+        if local_hour >= 18:
+            return self.get_user_local_date(user_id)
+        elif local_hour < 6:
+            offset = self.get_user_timezone(user_id)
+            utc_now = datetime.utcnow()
+            yesterday = utc_now - timedelta(days=1)
+            local_yesterday = yesterday + timedelta(hours=offset)
+            return local_yesterday.strftime("%Y-%m-%d")
+        else:
+            return None
+
+    def has_day_summary_for_date(self, user_id, date_str):
         data = self._load_json(user_id, "day_summary.json")
-        today = self.get_user_local_date(user_id)
         for record in data:
-            if record.get("date") == today:
+            if record.get("date") == date_str:
                 return True
         return False
 
     def add_day_summary(self, user_id, score, best, worst, gratitude, note=""):
-        if self.has_day_summary_today(user_id):
+        target_date = self.get_target_date_for_summary(user_id)
+        if target_date is None:
             return False
-        if self.get_user_local_hour(user_id) < 18:
+        if self.has_day_summary_for_date(user_id, target_date):
             return False
         data = self._load_json(user_id, "day_summary.json")
         record = {
-            "date": self.get_user_local_date(user_id),
+            "date": target_date,
             "timestamp": datetime.utcnow().isoformat(),
             "score": score,
             "best": best,
