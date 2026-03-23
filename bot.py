@@ -1011,7 +1011,108 @@ async def reminder_back_to_list(callback: types.CallbackQuery):
 async def reminder_back_to_menu(callback: types.CallbackQuery):
     await callback.message.edit_text("📅 Напоминания", reply_markup=get_reminder_menu())
     await callback.answer()
+# ========== МОИ ЗАПИСИ ==========
+@dp.message_handler(text="📋 Мои записи")
+async def my_records_menu(message: types.Message):
+    await message.answer("Выбери тип записей:", reply_markup=get_record_type_keyboard())
 
+# Обработчики для каждого типа
+@dp.message_handler(text="💭 Мысли")
+async def my_thoughts(message: types.Message):
+    thoughts = db.get_thoughts(message.from_user.id)
+    if not thoughts:
+        await message.answer("💭 У тебя пока нет мыслей.", reply_markup=get_record_type_keyboard())
+        return
+    text = "💭 *Твои мысли (последние 10):*\n\n"
+    for i, thought in enumerate(reversed(thoughts)):
+        text += f"{i+1}. *{thought['thought_type']}*: {thought['thought_text']}\n"
+        text += f"   📅 {thought['date']} {thought['time']} | Действие: {thought['action']}\n\n"
+    await message.answer(text, parse_mode="Markdown", reply_markup=get_thoughts_list_keyboard(thoughts))
+
+@dp.message_handler(text="📅 Напоминания")
+async def my_reminders(message: types.Message):
+    reminders = db.get_active_reminders(message.from_user.id)
+    if not reminders:
+        await message.answer("📅 У тебя пока нет активных напоминаний.", reply_markup=get_record_type_keyboard())
+        return
+    await message.answer("📅 Твои напоминания\n\nНажми на напоминание, чтобы управлять им:", reply_markup=get_reminder_list_keyboard(reminders))
+
+@dp.message_handler(text="😴 Сон")
+async def my_sleep(message: types.Message):
+    sleep = db._load_json(message.from_user.id, "sleep.json")
+    if not sleep:
+        await message.answer("😴 У тебя пока нет записей о сне.", reply_markup=get_record_type_keyboard())
+        return
+    text = "😴 *История сна:*\n\n"
+    for s in reversed(sleep[-10:]):  # последние 10
+        text += f"📅 {s['date']}\n"
+        text += f"   Лег: {s['bed_time']}, встал: {s['wake_time']}\n"
+        text += f"   Качество: {s['quality']}/10, ночные пробуждения: {'да' if s['woke_night'] == '✅ Да' else 'нет'}\n"
+        if s.get('note'):
+            text += f"   Заметка: {s['note']}\n"
+        text += "\n"
+    await message.answer(text, parse_mode="Markdown", reply_markup=get_record_type_keyboard())
+
+@dp.message_handler(text="⚡️ Чек-ины")
+async def my_checkins(message: types.Message):
+    checkins = db._load_json(message.from_user.id, "checkins.json")
+    if not checkins:
+        await message.answer("⚡️ У тебя пока нет чек-инов.", reply_markup=get_record_type_keyboard())
+        return
+    text = "⚡️ *История чек-инов:*\n\n"
+    for c in reversed(checkins[-10:]):
+        emotions_str = ", ".join(c.get('emotions', []))
+        text += f"📅 {c['date']} {c['time']} ({c['time_slot']})\n"
+        text += f"   Энергия: {c['energy']}/10, Стресс: {c['stress']}/10\n"
+        text += f"   Эмоции: {emotions_str}\n"
+        if c.get('note'):
+            text += f"   Заметка: {c['note']}\n"
+        text += "\n"
+    await message.answer(text, parse_mode="Markdown", reply_markup=get_record_type_keyboard())
+
+@dp.message_handler(text="📝 Итоги дня")
+async def my_day_summaries(message: types.Message):
+    summaries = db._load_json(message.from_user.id, "day_summary.json")
+    if not summaries:
+        await message.answer("📝 У тебя пока нет итогов дня.", reply_markup=get_record_type_keyboard())
+        return
+    text = "📝 *История итогов дня:*\n\n"
+    for s in reversed(summaries[-10:]):
+        text += f"📅 {s['date']}\n"
+        text += f"   Оценка: {s['score']}/10\n"
+        text += f"   Лучшее: {s.get('best', '—')}\n"
+        text += f"   Худшее: {s.get('worst', '—')}\n"
+        text += f"   Благодарность: {s.get('gratitude', '—')}\n"
+        if s.get('note'):
+            text += f"   Заметка: {s['note']}\n"
+        text += "\n"
+    await message.answer(text, parse_mode="Markdown", reply_markup=get_record_type_keyboard())
+
+@dp.message_handler(text="🍽 Еда")
+async def my_food(message: types.Message):
+    food = db._load_json(message.from_user.id, "food.json")
+    if not food:
+        await message.answer("🍽 У тебя пока нет записей о еде.", reply_markup=get_record_type_keyboard())
+        return
+    text = "🍽 *История приёмов пищи:*\n\n"
+    for f in reversed(food[-15:]):
+        text += f"📅 {f['date']} {f['time']} — {f['meal_type']}: {f['food_text']}\n"
+    await message.answer(text, parse_mode="Markdown", reply_markup=get_record_type_keyboard())
+
+@dp.message_handler(text="🥤 Напитки")
+async def my_drinks(message: types.Message):
+    drinks = db._load_json(message.from_user.id, "drinks.json")
+    if not drinks:
+        await message.answer("🥤 У тебя пока нет записей о напитках.", reply_markup=get_record_type_keyboard())
+        return
+    text = "🥤 *История напитков:*\n\n"
+    for d in reversed(drinks[-15:]):
+        text += f"📅 {d['date']} {d['time']} — {d['drink_type']}: {d['amount']}\n"
+    await message.answer(text, parse_mode="Markdown", reply_markup=get_record_type_keyboard())
+
+@dp.message_handler(text="⬅️ Назад")
+async def back_from_records(message: types.Message):
+    await message.answer("Главное меню", reply_markup=get_main_menu())
 def get_back_button():
     buttons = [[KeyboardButton(text="⬅️ Назад")]]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
