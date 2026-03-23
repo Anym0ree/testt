@@ -6,6 +6,8 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.utils import executor
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 
 from config import BOT_TOKEN
 from database import db
@@ -914,13 +916,28 @@ async def reminder_back_to_menu(callback: types.CallbackQuery):
 
 @dp.message_handler(text="⬅️ Назад")
 async def generic_back(message: types.Message):
-    # Если мы находимся в подменю заметок и напоминаний, возвращаем в главное меню.
-    # Этот обработчик сработает только если нет более специфичного.
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
 def get_back_button():
     buttons = [[KeyboardButton(text="⬅️ Назад")]]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+# ========== ПЛАНИРОВЩИК УВЕДОМЛЕНИЙ ==========
+scheduler = AsyncIOScheduler(timezone="UTC")
+
+async def check_reminders():
+    due_reminders = db.get_reminders_due_now()
+    for user_id, reminder in due_reminders:
+        try:
+            text = reminder["text"]
+            await bot.send_message(user_id, f"⏰ НАПОМИНАНИЕ!\n\n{text}")
+            db.mark_reminder_sent(user_id, reminder["id"])
+            logging.info(f"Отправлено напоминание {reminder['id']} пользователю {user_id}")
+        except Exception as e:
+            logging.error(f"Ошибка отправки напоминания {reminder['id']}: {e}")
+
+scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
+scheduler.start()
 
 # ========== ЗАПУСК ==========
 from web import start_web
