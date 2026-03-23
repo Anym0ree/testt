@@ -86,7 +86,7 @@ async def cmd_start(message: types.Message):
             "• ⚡️ Делать чек-ины (энергия, стресс, эмоции)\n"
             "• 🍽 Записывать еду и напитки\n"
             "• 💭 Сохранять мысли\n"
-            "• 📝 Итог дня (только после 18:00, один раз в день)\n"
+            "• 📝 Итог дня (с 18:00 до 6:00 утра)\n"
             "• 📅 Напоминания\n"
             "• 📊 Статистика\n"
             "• 📤 Экспорт\n\n"
@@ -139,8 +139,6 @@ async def cmd_skip(message: types.Message, state: FSMContext):
     await state.finish()
     await message.answer("⏭ Текущий опрос пропущен", reply_markup=get_main_menu())
 
-
-
 # ========== СОН ==========
 @dp.message_handler(text="🛌 Сон")
 async def sleep_start(message: types.Message):
@@ -161,13 +159,13 @@ async def sleep_bed_time(message: types.Message, state: FSMContext):
         return
     await state.update_data(bed_time=message.text)
     await SleepStates.next()
-    await message.answer("Во сколько встал?", reply_markup=get_time_buttons())
+    await message.answer("Во сколько встал?", reply_markup=get_morning_time_buttons())
 
 @dp.message_handler(state=SleepStates.bed_time)
 async def sleep_bed_time_custom(message: types.Message, state: FSMContext):
     await state.update_data(bed_time=message.text)
     await SleepStates.next()
-    await message.answer("Во сколько встал?", reply_markup=get_time_buttons())
+    await message.answer("Во сколько встал?", reply_markup=get_morning_time_buttons())
 
 @dp.message_handler(state=SleepStates.wake_time)
 async def sleep_wake_time(message: types.Message, state: FSMContext):
@@ -322,7 +320,7 @@ async def checkin_note(message: types.Message, state: FSMContext):
     await message.answer("✅ Чек-ин сохранен!", reply_markup=get_main_menu())
     await state.finish()
 
-# ========== ИТОГ ДНЯ ============== #
+# ========== ИТОГ ДНЯ ==========
 @dp.message_handler(text="📝 Итог дня")
 async def summary_start(message: types.Message):
     target_date = db.get_target_date_for_summary(message.from_user.id)
@@ -486,11 +484,6 @@ async def thought_action(message: types.Message, state: FSMContext):
     db.add_thought(message.from_user.id, data["thought_text"], data["thought_type"], message.text)
     await message.answer("✅ Мысль сохранена", reply_markup=get_main_menu())
     await state.finish()
-
-# ========== ПРОСМОТР МЫСЛЕЙ (кнопка) ==========
-@dp.message_handler(text="💭 Мои мысли")
-async def show_thoughts_button(message: types.Message):
-    await cmd_thoughts(message)
 
 # ========== СТАТИСТИКА ==========
 @dp.message_handler(text="📊 Статистика")
@@ -975,12 +968,12 @@ async def reminder_back_to_list(callback: types.CallbackQuery):
 async def reminder_back_to_menu(callback: types.CallbackQuery):
     await callback.message.edit_text("📅 Напоминания", reply_markup=get_reminder_menu())
     await callback.answer()
-# ========== МОИ ЗАПИСИ ==========
+
+# ========== МОИ ЗАПИСИ (только просмотр) ==========
 @dp.message_handler(text="📋 Мои записи")
 async def my_records_menu(message: types.Message):
-    await message.answer("Выбери тип записей:", reply_markup=get_record_type_keyboard())
+    await message.answer("Выбери тип записей для просмотра:", reply_markup=get_record_type_keyboard())
 
-# Обработчики для каждого типа
 @dp.message_handler(text="💭 Мысли")
 async def my_thoughts(message: types.Message):
     thoughts = db.get_thoughts(message.from_user.id)
@@ -1007,8 +1000,8 @@ async def my_sleep(message: types.Message):
     if not sleep:
         await message.answer("😴 У тебя пока нет записей о сне.", reply_markup=get_record_type_keyboard())
         return
-    text = "😴 *История сна:*\n\n"
-    for s in reversed(sleep[-10:]):  # последние 10
+    text = "😴 *История сна (последние 10 записей):*\n\n"
+    for s in reversed(sleep[-10:]):
         text += f"📅 {s['date']}\n"
         text += f"   Лег: {s['bed_time']}, встал: {s['wake_time']}\n"
         text += f"   Качество: {s['quality']}/10, ночные пробуждения: {'да' if s['woke_night'] == '✅ Да' else 'нет'}\n"
@@ -1023,7 +1016,7 @@ async def my_checkins(message: types.Message):
     if not checkins:
         await message.answer("⚡️ У тебя пока нет чек-инов.", reply_markup=get_record_type_keyboard())
         return
-    text = "⚡️ *История чек-инов:*\n\n"
+    text = "⚡️ *История чек-инов (последние 10):*\n\n"
     for c in reversed(checkins[-10:]):
         emotions_str = ", ".join(c.get('emotions', []))
         text += f"📅 {c['date']} {c['time']} ({c['time_slot']})\n"
@@ -1040,7 +1033,7 @@ async def my_day_summaries(message: types.Message):
     if not summaries:
         await message.answer("📝 У тебя пока нет итогов дня.", reply_markup=get_record_type_keyboard())
         return
-    text = "📝 *История итогов дня:*\n\n"
+    text = "📝 *История итогов дня (последние 10):*\n\n"
     for s in reversed(summaries[-10:]):
         text += f"📅 {s['date']}\n"
         text += f"   Оценка: {s['score']}/10\n"
@@ -1058,7 +1051,7 @@ async def my_food(message: types.Message):
     if not food:
         await message.answer("🍽 У тебя пока нет записей о еде.", reply_markup=get_record_type_keyboard())
         return
-    text = "🍽 *История приёмов пищи:*\n\n"
+    text = "🍽 *История приёмов пищи (последние 15):*\n\n"
     for f in reversed(food[-15:]):
         text += f"📅 {f['date']} {f['time']} — {f['meal_type']}: {f['food_text']}\n"
     await message.answer(text, parse_mode="Markdown", reply_markup=get_record_type_keyboard())
@@ -1069,7 +1062,7 @@ async def my_drinks(message: types.Message):
     if not drinks:
         await message.answer("🥤 У тебя пока нет записей о напитках.", reply_markup=get_record_type_keyboard())
         return
-    text = "🥤 *История напитков:*\n\n"
+    text = "🥤 *История напитков (последние 15):*\n\n"
     for d in reversed(drinks[-15:]):
         text += f"📅 {d['date']} {d['time']} — {d['drink_type']}: {d['amount']}\n"
     await message.answer(text, parse_mode="Markdown", reply_markup=get_record_type_keyboard())
@@ -1077,6 +1070,7 @@ async def my_drinks(message: types.Message):
 @dp.message_handler(text="⬅️ Назад")
 async def back_from_records(message: types.Message):
     await message.answer("Главное меню", reply_markup=get_main_menu())
+
 def get_back_button():
     buttons = [[KeyboardButton(text="⬅️ Назад")]]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
