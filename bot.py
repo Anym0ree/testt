@@ -322,18 +322,19 @@ async def checkin_note(message: types.Message, state: FSMContext):
     await message.answer("✅ Чек-ин сохранен!", reply_markup=get_main_menu())
     await state.finish()
 
-# ========== ИТОГ ДНЯ ==========
+# ========== ИТОГ ДНЯ ============== #
 @dp.message_handler(text="📝 Итог дня")
 async def summary_start(message: types.Message):
-    local_hour = db.get_user_local_hour(message.from_user.id)
-    if local_hour < 18:
-        await message.answer(f"📝 Итог дня можно подвести только после 18:00. Сейчас {local_hour}:00 по твоему времени.", reply_markup=get_main_menu())
+    target_date = db.get_target_date_for_summary(message.from_user.id)
+    if target_date is None:
+        await message.answer("📝 Итог дня можно подвести с 18:00 до 6:00 утра.", reply_markup=get_main_menu())
         return
-    if db.has_day_summary_today(message.from_user.id):
-        await message.answer("❌ Ты уже записал итог дня сегодня. Итог дня можно записывать только один раз.", reply_markup=get_main_menu())
+    if db.has_day_summary_for_date(message.from_user.id, target_date):
+        await message.answer(f"❌ Ты уже записал итог дня за {target_date}.", reply_markup=get_main_menu())
         return
+
     await DaySummaryStates.score.set()
-    await message.answer("📝 Оценка дня? (1-10)", reply_markup=get_energy_stress_buttons())
+    await message.answer(f"📝 Записываем итог дня за {target_date}. Оценка дня? (1-10)", reply_markup=get_energy_stress_buttons())
 
 @dp.message_handler(state=DaySummaryStates.score)
 async def summary_score(message: types.Message, state: FSMContext):
