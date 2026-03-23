@@ -139,44 +139,7 @@ async def cmd_skip(message: types.Message, state: FSMContext):
     await state.finish()
     await message.answer("⏭ Текущий опрос пропущен", reply_markup=get_main_menu())
 
-# ========== МЫСЛИ (просмотр) ==========
-@dp.message_handler(commands=['thoughts'])
-async def cmd_thoughts(message: types.Message):
-    thoughts = db.get_thoughts(message.from_user.id)
-    if not thoughts:
-        await message.answer("💭 У тебя пока нет записанных мыслей.", reply_markup=get_main_menu())
-        return
 
-    text = "💭 *Твои мысли (последние 10):*\n\n"
-    for i, thought in enumerate(reversed(thoughts)):
-        text += f"{i+1}. *{thought['thought_type']}*: {thought['thought_text']}\n"
-        text += f"   📅 {thought['date']} {thought['time']} | Действие: {thought['action']}\n\n"
-
-    await message.answer(text, parse_mode="Markdown", reply_markup=get_thoughts_list_keyboard(thoughts))
-
-# ========== СПИСОК ЕДЫ ЗА СЕГОДНЯ ==========
-@dp.message_handler(text="🍽 Еда сегодня")
-async def show_today_food(message: types.Message):
-    food_list = db.get_today_food(message.from_user.id)
-    if not food_list:
-        await message.answer("🍽 За сегодня ещё нет записей о еде.", reply_markup=get_main_menu())
-        return
-    text = "🍽 *Еда сегодня:*\n\n"
-    for f in food_list:
-        text += f"🕐 {f['time']} — {f['meal_type']}: {f['food_text']}\n"
-    await message.answer(text, parse_mode="Markdown", reply_markup=get_main_menu())
-
-# ========== СПИСОК НАПИТКОВ ЗА СЕГОДНЯ ==========
-@dp.message_handler(text="🥤 Напитки сегодня")
-async def show_today_drinks(message: types.Message):
-    drinks_list = db.get_today_drinks(message.from_user.id)
-    if not drinks_list:
-        await message.answer("🥤 За сегодня ещё нет записей о напитках.", reply_markup=get_main_menu())
-        return
-    text = "🥤 *Напитки сегодня:*\n\n"
-    for d in drinks_list:
-        text += f"🕐 {d['time']} — {d['drink_type']}: {d['amount']}\n"
-    await message.answer(text, parse_mode="Markdown", reply_markup=get_main_menu())
 
 # ========== СОН ==========
 @dp.message_handler(text="🛌 Сон")
