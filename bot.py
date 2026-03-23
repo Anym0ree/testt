@@ -50,7 +50,6 @@ class TimezoneStates(StatesGroup):
     city = State()
     offset = State()
 
-# Состояния для заметок и напоминаний
 class NoteStates(StatesGroup):
     text = State()
 
@@ -518,7 +517,7 @@ async def reset_request(message: types.Message):
     )
 
 @dp.message_handler(text="❌ Назад")
-async def back_to_main(message: types.Message):
+async def back_from_settings(message: types.Message):
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
 @dp.callback_query_handler(lambda c: c.data == "reset_confirm")
@@ -543,7 +542,6 @@ async def reset_cancel(callback_query: types.CallbackQuery):
 async def notes_reminders_main(message: types.Message):
     await message.answer("📝 Заметки и напоминания\n\nВыбери действие:", reply_markup=get_notes_reminders_main_menu())
 
-# --- Добавить запись ---
 @dp.message_handler(text="➕ Добавить запись")
 async def add_record_type(message: types.Message):
     await message.answer("Что хочешь добавить?", reply_markup=get_record_type_buttons())
@@ -691,7 +689,6 @@ async def reminder_advance(message: types.Message, state: FSMContext):
     await message.answer(f"✅ Напоминание добавлено!\n\n📝 {text}\n🕐 {target_date} {time_str}", reply_markup=get_main_menu())
     await state.finish()
 
-# --- Мои записи (просмотр) ---
 @dp.message_handler(text="📋 Мои записи")
 async def view_records(message: types.Message):
     await message.answer("Что хочешь посмотреть?", reply_markup=get_view_type_buttons())
@@ -716,6 +713,15 @@ async def delete_note(callback: types.CallbackQuery):
         db.delete_note_by_id(callback.from_user.id, note_id)
         await callback.answer("Заметка удалена", show_alert=False)
         await callback.message.edit_text("✅ Заметка удалена.")
+        # Возвращаемся к списку заметок
+        new_notes = db.get_notes(callback.from_user.id)
+        if new_notes:
+            text = "📋 *Твои заметки:*\n\n"
+            for i, note in enumerate(reversed(new_notes[-10:]), 1):
+                text += f"{i}. {note['text']}\n   📅 {note['date']} {note['time']}\n\n"
+            await callback.message.answer(text, parse_mode="Markdown", reply_markup=get_notes_list_keyboard(new_notes))
+        else:
+            await callback.message.answer("📋 У тебя пока нет заметок.", reply_markup=get_notes_reminders_main_menu())
     else:
         await callback.answer("Ошибка", show_alert=True)
 
@@ -905,6 +911,12 @@ async def reminder_back_to_list(callback: types.CallbackQuery):
 async def reminder_back_to_menu(callback: types.CallbackQuery):
     await callback.message.edit_text("📝 Заметки и напоминания", reply_markup=get_notes_reminders_main_menu())
     await callback.answer()
+
+@dp.message_handler(text="⬅️ Назад")
+async def generic_back(message: types.Message):
+    # Если мы находимся в подменю заметок и напоминаний, возвращаем в главное меню.
+    # Этот обработчик сработает только если нет более специфичного.
+    await message.answer("Главное меню", reply_markup=get_main_menu())
 
 def get_back_button():
     buttons = [[KeyboardButton(text="⬅️ Назад")]]
