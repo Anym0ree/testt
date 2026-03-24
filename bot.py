@@ -1005,7 +1005,12 @@ async def converter_format(message: types.Message, state: FSMContext):
     await message.answer("⏳ Конвертирую...")
     output_path = f"/tmp/output.{fmt.lower()}"
     try:
-        cmd = ['ffmpeg', '-i', input_path, output_path]
+        # Используем ffmpeg, который лежит в корне проекта
+        ffmpeg_path = os.path.join(os.getcwd(), 'ffmpeg')
+        if not os.path.exists(ffmpeg_path):
+            # fallback на системный ffmpeg (на случай, если не скачался)
+            ffmpeg_path = 'ffmpeg'
+        cmd = [ffmpeg_path, '-i', input_path, output_path]
         subprocess.run(cmd, check=True, capture_output=True)
         with open(output_path, 'rb') as f:
             await message.answer_document(f, caption=f"✅ Конвертировано в {fmt.upper()}")
