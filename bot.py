@@ -112,7 +112,6 @@ async def delayed_delete(message, delay):
     await delete_message(message)
 
 async def show_progress(message, text, duration=5):
-    """Показывает анимацию прогресса (имитация)"""
     progress_msg = await message.answer(f"⏳ {text} [░░░░░░░░░░] 0%")
     for i in range(1, 6):
         await asyncio.sleep(duration / 5)
@@ -150,7 +149,6 @@ async def cmd_start(message: types.Message):
             "Главное меню — /menu",
             reply_markup=get_main_menu()
         )
-
 # ========== УСТАНОВКА ГОРОДА ==========
 @dp.message_handler(state=TimezoneStates.city)
 async def set_city(message: types.Message, state: FSMContext):
@@ -1001,7 +999,6 @@ async def export_all_data(message: types.Message):
         await message.answer_document(f, caption="📁 Вот все твои данные")
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
-# Общий обработчик для скачивания по ссылке (все источники)
 @dp.message_handler(text=["🎵 SoundCloud", "📺 YouTube", "🎧 VK", "🎵 Spotify", "🌐 Другой URL"])
 async def export_any_start(message: types.Message, state: FSMContext):
     await ExportStates.url.set()
@@ -1014,6 +1011,13 @@ async def export_any_start(message: types.Message, state: FSMContext):
 async def export_any_url(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
         await state.finish()
+        # Удаляем диалоговое сообщение
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await export_menu(message)
         return
     url = message.text.strip()
@@ -1025,6 +1029,12 @@ async def export_any_url(message: types.Message, state: FSMContext):
 async def export_any_format(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
         await state.finish()
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await export_menu(message)
         return
     fmt = message.text
@@ -1032,10 +1042,9 @@ async def export_any_format(message: types.Message, state: FSMContext):
     url = data['url']
     await state.finish()
     # Удаляем диалоговое сообщение
-    msg_data = await state.get_data()
-    if msg_data.get('msg_id'):
+    if data.get('msg_id'):
         try:
-            await bot.delete_message(chat_id=msg_data['chat_id'], message_id=msg_data['msg_id'])
+            await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
         except:
             pass
     # Показываем прогресс-бар
@@ -1097,13 +1106,21 @@ async def export_any_format(message: types.Message, state: FSMContext):
 
 # ========== КОНВЕРТЕР ==========
 @dp.message_handler(text="🔄 Конвертер")
-async def converter_menu(message: types.Message):
-    await message.answer("Отправь мне файл (видео, аудио, изображение), который хочешь конвертировать.", reply_markup=get_back_button())
+async def converter_menu(message: types.Message, state: FSMContext):
     await ConverterStates.file.set()
+    # Сохраняем сообщение-приглашение
+    m = await message.answer("Отправь мне файл (видео, аудио, изображение), который хочешь конвертировать.", reply_markup=get_back_button())
+    await state.update_data(msg_id=m.message_id, chat_id=m.chat.id)
 
 @dp.message_handler(content_types=['document', 'video', 'audio'], state=ConverterStates.file)
 async def converter_file(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("Главное меню", reply_markup=get_main_menu())
         return
@@ -1129,12 +1146,27 @@ async def converter_file(message: types.Message, state: FSMContext):
     with open(temp_input, 'wb') as f:
         f.write(downloaded_file.getvalue())
     await state.update_data(input_path=temp_input)
+    # Удаляем пригласительное сообщение
+    data = await state.get_data()
+    if data.get('msg_id'):
+        try:
+            await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+        except:
+            pass
+    # Отправляем новое сообщение для выбора формата
+    m = await message.answer("Выбери целевой формат:", reply_markup=get_converter_formats_keyboard())
+    await state.update_data(msg_id=m.message_id, chat_id=m.chat.id)
     await ConverterStates.format.set()
-    await edit_or_send(state, message.chat.id, "Выбери целевой формат:", get_converter_formats_keyboard(), edit=False)
 
 @dp.message_handler(state=ConverterStates.format)
 async def converter_format(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("Главное меню", reply_markup=get_main_menu())
         return
@@ -1150,10 +1182,9 @@ async def converter_format(message: types.Message, state: FSMContext):
         await state.finish()
         return
     # Удаляем диалоговое сообщение
-    msg_data = await state.get_data()
-    if msg_data.get('msg_id'):
+    if data.get('msg_id'):
         try:
-            await bot.delete_message(chat_id=msg_data['chat_id'], message_id=msg_data['msg_id'])
+            await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
         except:
             pass
     await state.finish()
@@ -1188,6 +1219,7 @@ async def converter_format(message: types.Message, state: FSMContext):
         if os.path.exists(input_path):
             os.remove(input_path)
     await message.answer("Главное меню", reply_markup=get_main_menu())
+
 
 # ========== НАСТРОЙКИ ==========
 @dp.message_handler(text="⚙️ Настройки")
