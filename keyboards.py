@@ -230,12 +230,16 @@ def get_back_button():
 def get_export_menu():
     buttons = [
         [KeyboardButton(text="📥 Экспорт всех данных")],
-        [KeyboardButton(text="🎵 Скачать с SoundCloud")],
+        [KeyboardButton(text="🎵 SoundCloud")],
+        [KeyboardButton(text="📺 YouTube")],
+        [KeyboardButton(text="🎧 VK")],
+        [KeyboardButton(text="🎵 Spotify")],
+        [KeyboardButton(text="🌐 Другой URL")],
         [KeyboardButton(text="⬅️ Назад")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
-def get_soundcloud_formats_keyboard():
+def get_download_formats_keyboard():
     buttons = [
         [KeyboardButton(text="MP3 (аудио)")],
         [KeyboardButton(text="WAV (аудио)")],
