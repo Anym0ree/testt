@@ -121,7 +121,6 @@ def get_reminder_advance_buttons():
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
-# ----- Остальные клавиатуры -----
 def get_settings_menu():
     buttons = [
         [KeyboardButton(text="🌍 Сменить город")],
@@ -179,22 +178,6 @@ def get_drink_amount_buttons():
         [KeyboardButton(text="3+ чашек"), KeyboardButton(text="200 мл")],
         [KeyboardButton(text="300 мл"), KeyboardButton(text="500 мл")],
         [KeyboardButton(text="1 л"), KeyboardButton(text="Другое")],
-        [KeyboardButton(text="❌ Отмена")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
-
-def get_thought_type_buttons():
-    buttons = [
-        [KeyboardButton(text="😰 Тревожная"), KeyboardButton(text="🤬 Критическая")],
-        [KeyboardButton(text="🔄 Повторяющаяся"), KeyboardButton(text="💡 Инсайт")],
-        [KeyboardButton(text="✨ Вдохновляющая"), KeyboardButton(text="❌ Отмена")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
-
-def get_thought_action_buttons():
-    buttons = [
-        [KeyboardButton(text="🔄 Зациклился"), KeyboardButton(text="👋 Отпустил")],
-        [KeyboardButton(text="📝 Записал"), KeyboardButton(text="🗣 Рассказал")],
         [KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
