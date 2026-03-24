@@ -453,6 +453,10 @@ async def food_meal_type(message: types.Message, state: FSMContext):
         await state.finish()
         await food_drink_menu(message)
         return
+    if message.text == "⬅️ Назад":
+        await state.finish()
+        await food_drink_menu(message)
+        return
     await state.update_data(meal_type=message.text)
     await FoodStates.next()
     await message.answer("Что съел?", reply_markup=get_back_button())
@@ -474,6 +478,10 @@ async def drink_type(message: types.Message, state: FSMContext):
         await state.finish()
         await food_drink_menu(message)
         return
+    if message.text == "⬅️ Назад":
+        await state.finish()
+        await food_drink_menu(message)
+        return
     await state.update_data(drink_type=message.text)
     await DrinkStates.amount.set()
     await message.answer("Сколько?", reply_markup=get_drink_amount_buttons())
@@ -481,6 +489,10 @@ async def drink_type(message: types.Message, state: FSMContext):
 @dp.message_handler(state=DrinkStates.amount)
 async def drink_amount(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        await state.finish()
+        await food_drink_menu(message)
+        return
+    if message.text == "⬅️ Назад":
         await state.finish()
         await food_drink_menu(message)
         return
@@ -925,7 +937,7 @@ async def export_sc_format(message: types.Message, state: FSMContext):
     await state.finish()
     await message.answer("⏳ Скачиваю... Это может занять некоторое время.")
     try:
-        if fmt == "MP3":
+        if fmt == "MP3 (аудио)":
             opts = {
                 'format': 'bestaudio/best',
                 'postprocessors': [{
@@ -935,7 +947,7 @@ async def export_sc_format(message: types.Message, state: FSMContext):
                 }],
                 'outtmpl': '%(title)s.%(ext)s',
             }
-        elif fmt == "WAV":
+        elif fmt == "WAV (аудио)":
             opts = {
                 'format': 'bestaudio/best',
                 'postprocessors': [{
@@ -944,7 +956,7 @@ async def export_sc_format(message: types.Message, state: FSMContext):
                 }],
                 'outtmpl': '%(title)s.%(ext)s',
             }
-        elif fmt == "MP4":
+        elif fmt == "MP4 (видео)":
             opts = {
                 'format': 'bestvideo+bestaudio/best',
                 'merge_output_format': 'mp4',
@@ -958,9 +970,9 @@ async def export_sc_format(message: types.Message, state: FSMContext):
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
-            if fmt == "MP3":
+            if fmt == "MP3 (аудио)":
                 filename = filename.rsplit('.', 1)[0] + '.mp3'
-            elif fmt == "WAV":
+            elif fmt == "WAV (аудио)":
                 filename = filename.rsplit('.', 1)[0] + '.wav'
         with open(filename, 'rb') as f:
             await message.answer_document(f, caption=f"🎵 {info.get('title', 'файл')}")
@@ -968,6 +980,7 @@ async def export_sc_format(message: types.Message, state: FSMContext):
     except Exception as e:
         logging.error(f"Ошибка загрузки: {e}")
         await message.answer(f"❌ Ошибка: {e}\nПроверь ссылку и попробуй снова.", reply_markup=get_main_menu())
+
 # ========== КОНВЕРТЕР ==========
 @dp.message_handler(text="🔄 Конвертер")
 async def converter_menu(message: types.Message):
@@ -1043,6 +1056,52 @@ async def converter_format(message: types.Message, state: FSMContext):
             os.remove(input_path)
         if os.path.exists(output_path):
             os.remove(output_path)
+
+# ========== НАСТРОЙКИ ==========
+@dp.message_handler(text="⚙️ Настройки")
+async def settings(message: types.Message):
+    await message.answer(
+        "⚙️ Настройки\n\n"
+        "Выбери действие:",
+        reply_markup=get_settings_menu()
+    )
+
+@dp.message_handler(text="🌍 Сменить город")
+async def change_city(message: types.Message):
+    await message.answer(
+        "Выбери свой город или введи смещение вручную:",
+        reply_markup=get_timezone_buttons()
+    )
+    await TimezoneStates.city.set()
+
+@dp.message_handler(text="🔄 Сброс данных")
+async def reset_request(message: types.Message):
+    await message.answer(
+        "⚠️ ВНИМАНИЕ! Это действие удалит ВСЕ твои данные (сон, чек-ины, еду, мысли и т.д.).\n\n"
+        "Ты уверен?",
+        reply_markup=get_reset_confirm_keyboard()
+    )
+
+@dp.message_handler(text="❌ Назад")
+async def back_from_settings(message: types.Message):
+    await message.answer("Главное меню", reply_markup=get_main_menu())
+
+@dp.callback_query_handler(lambda c: c.data == "reset_confirm")
+async def reset_confirm(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    success = db.reset_user_data(user_id)
+    if success:
+        await callback_query.message.edit_text("✅ Все твои данные удалены.")
+    else:
+        await callback_query.message.edit_text("❌ Не удалось удалить данные (возможно, их и не было).")
+    await callback_query.answer()
+    await callback_query.message.answer("Главное меню", reply_markup=get_main_menu())
+
+@dp.callback_query_handler(lambda c: c.data == "reset_cancel")
+async def reset_cancel(callback_query: types.CallbackQuery):
+    await callback_query.message.edit_text("❌ Сброс отменён.")
+    await callback_query.answer()
+    await callback_query.message.answer("Главное меню", reply_markup=get_main_menu())
 
 # ========== УВЕДОМЛЕНИЯ ==========
 scheduler = None
