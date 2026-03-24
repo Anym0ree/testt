@@ -9,7 +9,7 @@ def get_main_menu():
         [KeyboardButton(text="📝 Заметки и напоминания")],
         [KeyboardButton(text="📊 Статистика")],
         [KeyboardButton(text="📤 Экспорт")],
-        [KeyboardButton(text="🔄 Конвертер")],          # новая кнопка
+        [KeyboardButton(text="🔄 Конвертер")],
         [KeyboardButton(text="⚙️ Настройки")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -227,7 +227,6 @@ def get_back_button():
     buttons = [[KeyboardButton(text="⬅️ Назад")]]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
-# ----- Новые клавиатуры для экспорта и конвертера -----
 def get_export_menu():
     buttons = [
         [KeyboardButton(text="📥 Экспорт всех данных")],
