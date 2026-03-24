@@ -715,7 +715,6 @@ async def delete_note(callback: types.CallbackQuery):
         db.delete_note_by_id(callback.from_user.id, note_id)
         await callback.answer("Заметка удалена", show_alert=False)
         await callback.message.edit_text("✅ Заметка удалена.")
-        # Возвращаемся к списку заметок
         new_notes = db.get_notes(callback.from_user.id)
         if new_notes:
             text = "📋 *Твои заметки:*\n\n"
@@ -923,7 +922,7 @@ def get_back_button():
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 # ========== ПЛАНИРОВЩИК УВЕДОМЛЕНИЙ ==========
-scheduler = AsyncIOScheduler(timezone="UTC")
+scheduler = None
 
 async def check_reminders():
     due_reminders = db.get_reminders_due_now()
@@ -936,15 +935,16 @@ async def check_reminders():
         except Exception as e:
             logging.error(f"Ошибка отправки напоминания {reminder['id']}: {e}")
 
-scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
-scheduler.start()
-
 # ========== ЗАПУСК ==========
 from web import start_web
 
 async def on_startup(dp):
+    global scheduler
     start_web()
-    print("🤖 Бот запущен!")
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
+    scheduler.start()
+    print("🤖 Бот запущен и планировщик уведомлений активен!")
 
 if __name__ == "__main__":
     executor.start_polling(dp, on_startup=on_startup)
