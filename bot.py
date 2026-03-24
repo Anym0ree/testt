@@ -958,7 +958,7 @@ async def export_sc_format(message: types.Message, state: FSMContext):
         logging.error(f"Ошибка загрузки: {e}")
         await message.answer(f"❌ Ошибка: {e}\nПроверь ссылку и попробуй снова.", reply_markup=get_main_menu())
 
-# ========== КОНВЕРТЕР ==========
+# ========== КОНВЕРТЕР (исправленный) ==========
 @dp.message_handler(text="🔄 Конвертер")
 async def converter_menu(message: types.Message):
     await message.answer("Отправь мне файл (видео, аудио, изображение), который хочешь конвертировать.", reply_markup=get_back_button())
@@ -998,76 +998,41 @@ async def converter_format(message: types.Message, state: FSMContext):
         await state.finish()
         await cmd_menu(message)
         return
-    fmt = message.text
+    fmt = message.text.upper()
+    allowed_formats = ["MP4", "GIF", "MP3", "WEBM"]
+    if fmt not in allowed_formats:
+        await message.answer(f"❌ Неверный формат. Выбери из кнопок: {', '.join(allowed_formats)}", reply_markup=get_converter_formats_keyboard())
+        return
     data = await state.get_data()
     input_path = data['input_path']
+    if not os.path.exists(input_path):
+        await message.answer("❌ Файл не найден. Попробуй ещё раз.", reply_markup=get_main_menu())
+        await state.finish()
+        return
     await state.finish()
     await message.answer("⏳ Конвертирую...")
     output_path = f"/tmp/output.{fmt.lower()}"
     try:
-        # Используем ffmpeg, который лежит в корне проекта
         ffmpeg_path = os.path.join(os.getcwd(), 'ffmpeg')
         if not os.path.exists(ffmpeg_path):
-            # fallback на системный ffmpeg (на случай, если не скачался)
             ffmpeg_path = 'ffmpeg'
         cmd = [ffmpeg_path, '-i', input_path, output_path]
-        subprocess.run(cmd, check=True, capture_output=True)
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        if result.returncode != 0:
+            error_msg = result.stderr.strip()[:200]
+            raise Exception(f"ffmpeg error: {error_msg}")
         with open(output_path, 'rb') as f:
             await message.answer_document(f, caption=f"✅ Конвертировано в {fmt.upper()}")
         os.remove(input_path)
         os.remove(output_path)
     except Exception as e:
         logging.error(f"Ошибка конвертации: {e}")
-        await message.answer(f"❌ Ошибка конвертации: {e}")
+        await message.answer(f"❌ Ошибка конвертации: {e}\nПопробуй другой файл или формат.")
     finally:
         if os.path.exists(input_path):
             os.remove(input_path)
-
-# ========== НАСТРОЙКИ ==========
-@dp.message_handler(text="⚙️ Настройки")
-async def settings(message: types.Message):
-    await message.answer(
-        "⚙️ Настройки\n\n"
-        "Выбери действие:",
-        reply_markup=get_settings_menu()
-    )
-
-@dp.message_handler(text="🌍 Сменить город")
-async def change_city(message: types.Message):
-    await message.answer(
-        "Выбери свой город или введи смещение вручную:",
-        reply_markup=get_timezone_buttons()
-    )
-    await TimezoneStates.city.set()
-
-@dp.message_handler(text="🔄 Сброс данных")
-async def reset_request(message: types.Message):
-    await message.answer(
-        "⚠️ ВНИМАНИЕ! Это действие удалит ВСЕ твои данные (сон, чек-ины, еду, мысли и т.д.).\n\n"
-        "Ты уверен?",
-        reply_markup=get_reset_confirm_keyboard()
-    )
-
-@dp.message_handler(text="❌ Назад")
-async def back_from_settings(message: types.Message):
-    await message.answer("Главное меню", reply_markup=get_main_menu())
-
-@dp.callback_query_handler(lambda c: c.data == "reset_confirm")
-async def reset_confirm(callback_query: types.CallbackQuery):
-    user_id = callback_query.from_user.id
-    success = db.reset_user_data(user_id)
-    if success:
-        await callback_query.message.edit_text("✅ Все твои данные удалены.")
-    else:
-        await callback_query.message.edit_text("❌ Не удалось удалить данные (возможно, их и не было).")
-    await callback_query.answer()
-    await callback_query.message.answer("Главное меню", reply_markup=get_main_menu())
-
-@dp.callback_query_handler(lambda c: c.data == "reset_cancel")
-async def reset_cancel(callback_query: types.CallbackQuery):
-    await callback_query.message.edit_text("❌ Сброс отменён.")
-    await callback_query.answer()
-    await callback_query.message.answer("Главное меню", reply_markup=get_main_menu())
+        if os.path.exists(output_path):
+            os.remove(output_path)
 
 # ========== ПЛАНИРОВЩИК УВЕДОМЛЕНИЙ ==========
 scheduler = None
