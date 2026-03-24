@@ -67,6 +67,9 @@ class ReminderStates(StatesGroup):
     edit_minute = State()
     edit_reminder_id = State()
 
+class FoodDrinkStates(StatesGroup):
+    type = State()
+
 # ========== КОМАНДЫ ==========
 @dp.message_handler(commands=['start'])
 async def cmd_start(message: types.Message):
@@ -84,7 +87,7 @@ async def cmd_start(message: types.Message):
             "Что я умею:\n"
             "• 🛌 Записывать сон (один раз в день)\n"
             "• ⚡️ Делать чек-ины (энергия, стресс, эмоции)\n"
-            "• 🍽 Записывать еду и напитки\n"
+            "• 🍽🥤 Еда и напитки\n"
             "• 📝 Заметки и напоминания\n"
             "• 📝 Итог дня (с 18:00 до 6:00 утра)\n"
             "• 📊 Статистика\n"
@@ -391,12 +394,45 @@ async def summary_note(message: types.Message, state: FSMContext):
         await message.answer("❌ Не удалось сохранить итог дня.", reply_markup=get_main_menu())
     await state.finish()
 
-# ========== ЕДА ==========
-@dp.message_handler(text="🍽 Еда")
-async def food_start(message: types.Message):
-    await FoodStates.meal_type.set()
-    await message.answer("Что это за прием?", reply_markup=get_meal_type_buttons())
+# ========== ОБЪЕДИНЁННАЯ ЕДА И НАПИТКИ ==========
+@dp.message_handler(text="🍽🥤 Еда и напитки")
+async def food_drink_menu(message: types.Message):
+    await message.answer("🍽🥤 Еда и напитки\n\nВыбери действие:", reply_markup=get_food_drink_menu())
 
+@dp.message_handler(text="➕ Добавить запись")
+async def add_food_drink_start(message: types.Message):
+    await FoodDrinkStates.type.set()
+    await message.answer("Что хочешь добавить?", reply_markup=get_food_drink_type_buttons())
+
+@dp.message_handler(state=FoodDrinkStates.type)
+async def add_food_drink_type(message: types.Message, state: FSMContext):
+    if message.text == "⬅️ Назад":
+        await state.finish()
+        await food_drink_menu(message)
+        return
+    if message.text == "🍽 Еда":
+        await state.finish()
+        await FoodStates.meal_type.set()
+        await message.answer("Что это за прием?", reply_markup=get_meal_type_buttons())
+    elif message.text == "🥤 Напитки":
+        await state.finish()
+        await DrinkStates.drink_type.set()
+        await message.answer("Что выпил?", reply_markup=get_drink_type_buttons())
+    else:
+        await message.answer("Выбери из предложенных вариантов.", reply_markup=get_food_drink_type_buttons())
+
+@dp.message_handler(text="📋 Посмотреть сегодня")
+async def view_food_drink_today(message: types.Message):
+    items = db.get_today_food_and_drinks(message.from_user.id)
+    if not items:
+        await message.answer("🍽🥤 За сегодня ещё нет записей о еде и напитках.", reply_markup=get_food_drink_menu())
+        return
+    text = "🍽🥤 *Еда и напитки сегодня:*\n\n"
+    for item in items:
+        text += f"🕐 {item['time']} — {item['type']}: {item['text']}\n"
+    await message.answer(text, parse_mode="Markdown", reply_markup=get_food_drink_menu())
+
+# ========== ЕДА (старый обработчик, но он теперь вызывается через меню) ==========
 @dp.message_handler(state=FoodStates.meal_type)
 async def food_meal_type(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
@@ -414,12 +450,7 @@ async def food_text(message: types.Message, state: FSMContext):
     await message.answer(f"✅ Добавлено: {data['meal_type']} — {message.text}", reply_markup=get_main_menu())
     await state.finish()
 
-# ========== НАПИТКИ ==========
-@dp.message_handler(text="🥤 Напитки")
-async def drink_start(message: types.Message):
-    await DrinkStates.drink_type.set()
-    await message.answer("Что выпил?", reply_markup=get_drink_type_buttons())
-
+# ========== НАПИТКИ (старый обработчик) ==========
 @dp.message_handler(state=DrinkStates.drink_type)
 async def drink_type(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
@@ -455,30 +486,6 @@ async def drink_amount_custom(message: types.Message, state: FSMContext):
     await message.answer(f"✅ Добавлено: {drink_type} — {amount}", reply_markup=get_main_menu())
     await state.finish()
 
-# ========== ЕДА СЕГОДНЯ ==========
-@dp.message_handler(text="🍽 Еда сегодня")
-async def show_today_food(message: types.Message):
-    food_list = db.get_today_food(message.from_user.id)
-    if not food_list:
-        await message.answer("🍽 За сегодня ещё нет записей о еде.", reply_markup=get_main_menu())
-        return
-    text = "🍽 *Еда сегодня:*\n\n"
-    for f in food_list:
-        text += f"🕐 {f['time']} — {f['meal_type']}: {f['food_text']}\n"
-    await message.answer(text, parse_mode="Markdown", reply_markup=get_main_menu())
-
-# ========== НАПИТКИ СЕГОДНЯ ==========
-@dp.message_handler(text="🥤 Напитки сегодня")
-async def show_today_drinks(message: types.Message):
-    drinks_list = db.get_today_drinks(message.from_user.id)
-    if not drinks_list:
-        await message.answer("🥤 За сегодня ещё нет записей о напитках.", reply_markup=get_main_menu())
-        return
-    text = "🥤 *Напитки сегодня:*\n\n"
-    for d in drinks_list:
-        text += f"🕐 {d['time']} — {d['drink_type']}: {d['amount']}\n"
-    await message.answer(text, parse_mode="Markdown", reply_markup=get_main_menu())
-
 # ========== СТАТИСТИКА ==========
 @dp.message_handler(text="📊 Статистика")
 async def stats(message: types.Message):
@@ -513,7 +520,7 @@ async def change_city(message: types.Message):
 @dp.message_handler(text="🔄 Сброс данных")
 async def reset_request(message: types.Message):
     await message.answer(
-        "⚠️ ВНИМАНИЕ! Это действие удалит ВСЕ твои данные (сон, чек-ины, еду, мысли и т.д.).\n\n"
+        "⚠️ ВНИМАНИЕ! Это действие удалит ВСЕ твои данные (сон, чек-ины, еду, напитки, заметки, напоминания и т.д.).\n\n"
         "Ты уверен?",
         reply_markup=get_reset_confirm_keyboard()
     )
@@ -545,7 +552,7 @@ async def notes_reminders_main(message: types.Message):
     await message.answer("📝 Заметки и напоминания\n\nВыбери действие:", reply_markup=get_notes_reminders_main_menu())
 
 @dp.message_handler(text="➕ Добавить запись")
-async def add_record_type(message: types.Message):
+async def add_note_reminder_start(message: types.Message):
     await message.answer("Что хочешь добавить?", reply_markup=get_record_type_buttons())
 
 @dp.message_handler(text="📝 Заметка")
@@ -687,10 +694,13 @@ async def reminder_advance(message: types.Message, state: FSMContext):
     time_str = f"{data['hour']:02d}:{data['minute']}"
 
     reminder_id = db.add_reminder(message.from_user.id, text, target_date, time_str, advance_type)
-
-    await message.answer(f"✅ Напоминание добавлено!\n\n📝 {text}\n🕐 {target_date} {time_str}", reply_markup=get_main_menu())
+    if reminder_id is None:
+        await message.answer("❌ Нельзя создать напоминание на прошедшее время.", reply_markup=get_notes_reminders_main_menu())
+    else:
+        await message.answer(f"✅ Напоминание добавлено!\n\n📝 {text}\n🕐 {target_date} {time_str}", reply_markup=get_main_menu())
     await state.finish()
 
+# ========== ПРОСМОТР ЗАМЕТОК И НАПОМИНАНИЙ ==========
 @dp.message_handler(text="📋 Мои записи")
 async def view_records(message: types.Message):
     await message.answer("Что хочешь посмотреть?", reply_markup=get_view_type_buttons())
