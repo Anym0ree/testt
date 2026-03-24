@@ -83,7 +83,7 @@ class ConverterStates(StatesGroup):
     format = State()
 
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
-async def edit_or_send(state, user_id, text, keyboard=None, edit=True):
+async def edit_or_send(state: FSMContext, user_id, text, keyboard=None, edit=True):
     data = await state.get_data()
     msg_id = data.get('msg_id')
     chat_id = data.get('chat_id')
@@ -198,7 +198,7 @@ async def cmd_skip(message: types.Message, state: FSMContext):
 
 # ========== СОН ==========
 @dp.message_handler(text="🛌 Сон")
-async def sleep_start(message: types.Message):
+async def sleep_start(message: types.Message, state: FSMContext):
     if db.has_sleep_today(message.from_user.id):
         await message.answer("❌ Ты уже записал сон сегодня. Сон можно записывать только один раз в день.", reply_markup=get_main_menu())
         return
@@ -294,7 +294,7 @@ async def sleep_note(message: types.Message, state: FSMContext):
 
 # ========== ЧЕК-ИН ==========
 @dp.message_handler(text="⚡️ Чек-ин")
-async def checkin_start(message: types.Message):
+async def checkin_start(message: types.Message, state: FSMContext):
     await CheckinStates.energy.set()
     await edit_or_send(state, message.chat.id, "⚡️ Энергия? (1-10)", get_energy_stress_buttons(), edit=False)
 
@@ -390,7 +390,7 @@ async def checkin_note(message: types.Message, state: FSMContext):
 
 # ========== ИТОГ ДНЯ ==========
 @dp.message_handler(text="📝 Итог дня")
-async def summary_start(message: types.Message):
+async def summary_start(message: types.Message, state: FSMContext):
     target_date = db.get_target_date_for_summary(message.from_user.id)
     if target_date is None:
         await message.answer("📝 Итог дня можно подвести с 18:00 до 6:00 утра.", reply_markup=get_main_menu())
@@ -472,7 +472,7 @@ async def food_drink_menu(message: types.Message):
     await message.answer("🍽🥤 Еда и напитки\n\nВыбери действие:", reply_markup=get_food_drink_menu())
 
 @dp.message_handler(text="➕ Добавить еду/напитки")
-async def add_food_drink_start(message: types.Message):
+async def add_food_drink_start(message: types.Message, state: FSMContext):
     await FoodDrinkStates.type.set()
     await edit_or_send(state, message.chat.id, "Что хочешь добавить?", get_food_drink_type_buttons(), edit=False)
 
@@ -603,7 +603,7 @@ async def add_record_type(message: types.Message):
     await message.answer("Что хочешь добавить?", reply_markup=get_record_type_buttons())
 
 @dp.message_handler(text="📝 Заметка")
-async def create_note_start(message: types.Message):
+async def create_note_start(message: types.Message, state: FSMContext):
     await NoteStates.text.set()
     await edit_or_send(state, message.chat.id, "📝 Введи текст заметки:", get_back_button(), edit=False)
 
@@ -625,7 +625,7 @@ async def create_note_text(message: types.Message, state: FSMContext):
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
 @dp.message_handler(text="⏰ Напоминание")
-async def create_reminder_start(message: types.Message):
+async def create_reminder_start(message: types.Message, state: FSMContext):
     await ReminderStates.text.set()
     await edit_or_send(state, message.chat.id, "📝 Введи название напоминания:", get_back_button(), edit=False)
 
@@ -1003,7 +1003,7 @@ async def export_all_data(message: types.Message):
 
 # Общий обработчик для скачивания по ссылке (все источники)
 @dp.message_handler(text=["🎵 SoundCloud", "📺 YouTube", "🎧 VK", "🎵 Spotify", "🌐 Другой URL"])
-async def export_any_start(message: types.Message):
+async def export_any_start(message: types.Message, state: FSMContext):
     await ExportStates.url.set()
     if message.text == "🌐 Другой URL":
         await edit_or_send(state, message.chat.id, "📎 Отправь ссылку на трек или плейлист (YouTube, SoundCloud, VK, Spotify и др.):", get_back_button(), edit=False)
