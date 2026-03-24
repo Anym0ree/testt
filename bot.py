@@ -1034,53 +1034,7 @@ async def converter_format(message: types.Message, state: FSMContext):
         if os.path.exists(output_path):
             os.remove(output_path)
 
-# ========== НАСТРОЙКИ ==========
-@dp.message_handler(text="⚙️ Настройки")
-async def settings(message: types.Message):
-    await message.answer(
-        "⚙️ Настройки\n\n"
-        "Выбери действие:",
-        reply_markup=get_settings_menu()
-    )
-
-@dp.message_handler(text="🌍 Сменить город")
-async def change_city(message: types.Message):
-    await message.answer(
-        "Выбери свой город или введи смещение вручную:",
-        reply_markup=get_timezone_buttons()
-    )
-    await TimezoneStates.city.set()
-
-@dp.message_handler(text="🔄 Сброс данных")
-async def reset_request(message: types.Message):
-    await message.answer(
-        "⚠️ ВНИМАНИЕ! Это действие удалит ВСЕ твои данные (сон, чек-ины, еду, мысли и т.д.).\n\n"
-        "Ты уверен?",
-        reply_markup=get_reset_confirm_keyboard()
-    )
-
-@dp.message_handler(text="❌ Назад")
-async def back_from_settings(message: types.Message):
-    await message.answer("Главное меню", reply_markup=get_main_menu())
-
-@dp.callback_query_handler(lambda c: c.data == "reset_confirm")
-async def reset_confirm(callback_query: types.CallbackQuery):
-    user_id = callback_query.from_user.id
-    success = db.reset_user_data(user_id)
-    if success:
-        await callback_query.message.edit_text("✅ Все твои данные удалены.")
-    else:
-        await callback_query.message.edit_text("❌ Не удалось удалить данные (возможно, их и не было).")
-    await callback_query.answer()
-    await callback_query.message.answer("Главное меню", reply_markup=get_main_menu())
-
-@dp.callback_query_handler(lambda c: c.data == "reset_cancel")
-async def reset_cancel(callback_query: types.CallbackQuery):
-    await callback_query.message.edit_text("❌ Сброс отменён.")
-    await callback_query.answer()
-    await callback_query.message.answer("Главное меню", reply_markup=get_main_menu())
-
-# ========== ПЛАНИРОВЩИК УВЕДОМЛЕНИЙ ==========
+# ========== УВЕДОМЛЕНИЯ ==========
 scheduler = None
 
 async def check_reminders():
