@@ -215,13 +215,12 @@ class Database:
             return True
         return False
 
-    # === НАПОМИНАНИЯ (с проверкой времени) ===
+    # === НАПОМИНАНИЯ ===
     def add_reminder(self, user_id, text, target_date, target_time, advance_type=None):
-        # Проверяем, не в прошлом ли дата/время
         local_dt = self.get_user_local_datetime(user_id)
         target_dt = datetime.strptime(f"{target_date} {target_time}", "%Y-%m-%d %H:%M")
         if target_dt < local_dt:
-            return None  # нельзя добавить
+            return None
 
         reminders = self._load_json(user_id, "reminders.json")
         reminder_id = len(reminders) + 1
@@ -237,11 +236,10 @@ class Database:
         reminders.append(reminder)
         self._save_json(user_id, "reminders.json", reminders)
 
-        # Предварительное напоминание, если нужно
         if advance_type:
             adv_date = self._get_advance_date(target_date, advance_type)
             adv_dt = datetime.strptime(f"{adv_date} {target_time}", "%Y-%m-%d %H:%M")
-            if adv_dt >= local_dt:   # если предварительное ещё не прошло
+            if adv_dt >= local_dt:
                 advance_reminder = {
                     "id": reminder_id + 1000,
                     "text": f"⚠️ ЗА ДЕНЬ: {text}" if advance_type == "day" else f"⚠️ ЗА 3 ЧАСА: {text}" if advance_type == "3h" else f"⚠️ ЗА 1 ЧАС: {text}",
