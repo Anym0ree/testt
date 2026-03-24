@@ -255,3 +255,27 @@ def get_convert_target_format_buttons():
         [KeyboardButton(text="⬅️ Назад")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+def get_export_menu():
+    buttons = [
+        [KeyboardButton(text="📥 Экспорт всех данных")],
+        [KeyboardButton(text="🎵 Скачать с SoundCloud")],
+        [KeyboardButton(text="⬅️ Назад")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_soundcloud_formats_keyboard():
+    buttons = [
+        [KeyboardButton(text="MP3 (аудио)")],
+        [KeyboardButton(text="MP4 (видео)")],
+        [KeyboardButton(text="Лучшее качество (оригинал)")],
+        [KeyboardButton(text="⬅️ Назад")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_converter_formats_keyboard():
+    buttons = [
+        [KeyboardButton(text="MP4"), KeyboardButton(text="GIF")],
+        [KeyboardButton(text="MP3"), KeyboardButton(text="WEBM")],
+        [KeyboardButton(text="⬅️ Назад")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
