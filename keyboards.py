@@ -15,7 +15,7 @@ def get_main_menu():
 
 def get_food_drink_menu():
     buttons = [
-        [KeyboardButton(text="➕ Добавить запись")],
+        [KeyboardButton(text="➕ Добавить еду/напитки")],
         [KeyboardButton(text="📋 Посмотреть сегодня")],
         [KeyboardButton(text="⬅️ Назад")]
     ]
