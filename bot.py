@@ -925,7 +925,7 @@ async def export_sc_format(message: types.Message, state: FSMContext):
     await state.finish()
     await message.answer("⏳ Скачиваю... Это может занять некоторое время.")
     try:
-        if fmt == "MP3 (аудио)":
+        if fmt == "MP3":
             opts = {
                 'format': 'bestaudio/best',
                 'postprocessors': [{
@@ -935,7 +935,7 @@ async def export_sc_format(message: types.Message, state: FSMContext):
                 }],
                 'outtmpl': '%(title)s.%(ext)s',
             }
-        elif fmt == "WAV (аудио)":
+        elif fmt == "WAV":
             opts = {
                 'format': 'bestaudio/best',
                 'postprocessors': [{
@@ -944,7 +944,7 @@ async def export_sc_format(message: types.Message, state: FSMContext):
                 }],
                 'outtmpl': '%(title)s.%(ext)s',
             }
-        elif fmt == "MP4 (видео)":
+        elif fmt == "MP4":
             opts = {
                 'format': 'bestvideo+bestaudio/best',
                 'merge_output_format': 'mp4',
@@ -958,9 +958,9 @@ async def export_sc_format(message: types.Message, state: FSMContext):
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
-            if fmt == "MP3 (аудио)":
+            if fmt == "MP3":
                 filename = filename.rsplit('.', 1)[0] + '.mp3'
-            elif fmt == "WAV (аудио)":
+            elif fmt == "WAV":
                 filename = filename.rsplit('.', 1)[0] + '.wav'
         with open(filename, 'rb') as f:
             await message.answer_document(f, caption=f"🎵 {info.get('title', 'файл')}")
