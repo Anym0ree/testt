@@ -935,6 +935,15 @@ async def export_sc_format(message: types.Message, state: FSMContext):
                 }],
                 'outtmpl': '%(title)s.%(ext)s',
             }
+        elif fmt == "WAV (аудио)":
+            opts = {
+                'format': 'bestaudio/best',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'wav',
+                }],
+                'outtmpl': '%(title)s.%(ext)s',
+            }
         elif fmt == "MP4 (видео)":
             opts = {
                 'format': 'bestvideo+bestaudio/best',
@@ -951,13 +960,14 @@ async def export_sc_format(message: types.Message, state: FSMContext):
             filename = ydl.prepare_filename(info)
             if fmt == "MP3 (аудио)":
                 filename = filename.rsplit('.', 1)[0] + '.mp3'
+            elif fmt == "WAV (аудио)":
+                filename = filename.rsplit('.', 1)[0] + '.wav'
         with open(filename, 'rb') as f:
             await message.answer_document(f, caption=f"🎵 {info.get('title', 'файл')}")
         os.remove(filename)
     except Exception as e:
         logging.error(f"Ошибка загрузки: {e}")
         await message.answer(f"❌ Ошибка: {e}\nПроверь ссылку и попробуй снова.", reply_markup=get_main_menu())
-
 # ========== КОНВЕРТЕР ==========
 @dp.message_handler(text="🔄 Конвертер")
 async def converter_menu(message: types.Message):
