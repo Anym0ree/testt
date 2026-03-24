@@ -7,6 +7,7 @@ def get_main_menu():
         [KeyboardButton(text="📝 Итог дня")],
         [KeyboardButton(text="🍽🥤 Еда и напитки")],
         [KeyboardButton(text="📝 Заметки и напоминания")],
+        [KeyboardButton(text="🎵 Конвертер и загрузка")],  # новая кнопка
         [KeyboardButton(text="📊 Статистика")],
         [KeyboardButton(text="📤 Экспорт")],
         [KeyboardButton(text="⚙️ Настройки")]
@@ -224,4 +225,33 @@ def get_timezone_buttons():
 
 def get_back_button():
     buttons = [[KeyboardButton(text="⬅️ Назад")]]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+# ========== КЛАВИАТУРЫ ДЛЯ КОНВЕРТЕРА ==========
+def get_converter_main_menu():
+    buttons = [
+        [KeyboardButton(text="🎵 Скачать из SoundCloud")],
+        [KeyboardButton(text="🔄 Конвертировать файл")],
+        [KeyboardButton(text="⬅️ Назад")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_soundcloud_format_buttons():
+    buttons = [
+        [KeyboardButton(text="🎵 Аудио (MP3)")],
+        [KeyboardButton(text="📹 Видео (MP4)")],
+        [KeyboardButton(text="🎞 GIF")],
+        [KeyboardButton(text="⬅️ Назад")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_convert_target_format_buttons():
+    buttons = [
+        [KeyboardButton(text="🎵 MP3")],
+        [KeyboardButton(text="📹 MP4")],
+        [KeyboardButton(text="🎞 GIF")],
+        [KeyboardButton(text="🎥 AVI")],
+        [KeyboardButton(text="🎬 MOV")],
+        [KeyboardButton(text="⬅️ Назад")]
+    ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
