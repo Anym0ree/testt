@@ -399,7 +399,7 @@ async def summary_note(message: types.Message, state: FSMContext):
 async def food_drink_menu(message: types.Message):
     await message.answer("🍽🥤 Еда и напитки\n\nВыбери действие:", reply_markup=get_food_drink_menu())
 
-@dp.message_handler(text="➕ Добавить запись")
+@dp.message_handler(text="➕ Добавить еду/напитки")
 async def add_food_drink_start(message: types.Message):
     await FoodDrinkStates.type.set()
     await message.answer("Что хочешь добавить?", reply_markup=get_food_drink_type_buttons())
