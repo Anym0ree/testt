@@ -1185,8 +1185,7 @@ async def converter_format(message: types.Message, state: FSMContext):
     finally:
         if os.path.exists(input_path):
             os.remove(input_path)
-    await message.answer("Главное меню", 
-
+    await message.answer("Главное меню", reply_markup=get_main_menu())
 # ========== НАСТРОЙКИ ==========
 @dp.message_handler(text="⚙️ Настройки")
 async def settings(message: types.Message):
