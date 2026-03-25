@@ -236,6 +236,7 @@ def get_export_menu():
         [KeyboardButton(text="📥 Экспорт всех данных")],
         [KeyboardButton(text="🎵 SoundCloud")],
         [KeyboardButton(text="📺 YouTube")],
+        [KeyboardButton(text="📌 Pinterest")],
         [KeyboardButton(text="🎧 VK")],
         [KeyboardButton(text="🎵 Spotify")],
         [KeyboardButton(text="🌐 Другой URL")],
