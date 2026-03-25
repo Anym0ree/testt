@@ -721,16 +721,44 @@ async def export_any_format(message: types.Message, state: FSMContext):
         return
     await delete_dialog_message(state)
     await state.finish()
-    progress_msg = await message.answer("⏳ Скачиваю... [░░░░░░░░░░] 0%")
-    try:
-        for i in range(1, 6):
-            await asyncio.sleep(1)
-            bar = "█" * i + "░" * (5 - i)
-            await bot.edit_message_text(f"⏳ Скачиваю... [{bar}] {i*20}%", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
 
+    # Отправляем начальное сообщение
+    progress_msg = await message.answer("⏳ Начинаю скачивание...")
+
+    # Переменные для отслеживания прогресса
+    last_percent = 0
+
+    def progress_hook(d):
+        nonlocal last_percent
+        if d['status'] == 'downloading':
+            # yt-dlp передаёт процент в поле '_percent_str'
+            percent_str = d.get('_percent_str', '0%').strip()
+            try:
+                percent = float(percent_str.replace('%', ''))
+            except:
+                percent = 0
+            if percent - last_percent >= 5 or percent == 100:
+                last_percent = percent
+                # Обновляем сообщение
+                asyncio.create_task(update_progress(progress_msg, percent))
+        elif d['status'] == 'finished':
+            asyncio.create_task(update_progress(progress_msg, 100, final=True))
+
+    async def update_progress(msg, percent, final=False):
+        try:
+            bar = "█" * int(percent // 10) + "░" * (10 - int(percent // 10))
+            text = f"⏳ Скачивание: [{bar}] {percent:.0f}%"
+            if final:
+                text = "✅ Скачивание завершено! Обрабатываю файл..."
+            await bot.edit_message_text(text, chat_id=msg.chat.id, message_id=msg.message_id)
+        except:
+            pass
+
+    try:
         is_youtube = 'youtube.com' in url or 'youtu.be' in url
         opts = {
             'outtmpl': '%(title)s.%(ext)s',
+            'progress_hooks': [progress_hook],
         }
         if is_youtube:
             opts.update({
