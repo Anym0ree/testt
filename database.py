@@ -215,6 +215,15 @@ class Database:
             return True
         return False
 
+    def update_note_text(self, user_id, note_id, new_text):
+        notes = self._load_json(user_id, "notes.json")
+        for note in notes:
+            if note.get("id") == note_id:
+                note["text"] = new_text
+                self._save_json(user_id, "notes.json", notes)
+                return True
+        return False
+
     # === НАПОМИНАНИЯ ===
     def add_reminder(self, user_id, text, target_date, target_time, advance_type=None):
         local_dt = self.get_user_local_datetime(user_id)
