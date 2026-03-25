@@ -118,17 +118,6 @@ async def delayed_delete(message, delay):
     except:
         pass
 
-async def show_progress(message, text, duration=5):
-    progress_msg = await message.answer(f"⏳ {text} [░░░░░░░░░░] 0%")
-    for i in range(1, 6):
-        await asyncio.sleep(duration / 5)
-        bar = "█" * i + "░" * (5 - i)
-        await bot.edit_message_text(f"⏳ {text} [{bar}] {i*20}%", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
-    await bot.edit_message_text(f"✅ {text} завершено!", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
-    await asyncio.sleep(1)
-    await progress_msg.delete()
-    return True
-
 def is_valid_url(url):
     return re.match(r'^https?://', url) is not None
 
@@ -1031,15 +1020,10 @@ async def export_any_format(message: types.Message, state: FSMContext):
             bar = "█" * i + "░" * (5 - i)
             await bot.edit_message_text(f"⏳ Скачиваю... [{bar}] {i*20}%", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
 
-        # Определяем, является ли ссылка YouTube
         is_youtube = 'youtube.com' in url or 'youtu.be' in url
-
-        # Общие настройки
         opts = {
             'outtmpl': '%(title)s.%(ext)s',
         }
-
-        # Дополнительные параметры для YouTube (обход блокировки)
         if is_youtube:
             opts.update({
                 'extractor_args': {
@@ -1049,14 +1033,12 @@ async def export_any_format(message: types.Message, state: FSMContext):
                     }
                 },
                 'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-                'sleep_interval': 5,  # пауза между запросами
+                'sleep_interval': 5,
                 'sleep_requests': 5,
             })
         else:
-            # Стандартный user-agent для других сервисов
             opts['user_agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
-        # Настройки формата
         if fmt == "MP3 (аудио)":
             opts.update({
                 'format': 'bestaudio/best',
@@ -1079,7 +1061,7 @@ async def export_any_format(message: types.Message, state: FSMContext):
                 'format': 'bestvideo+bestaudio/best',
                 'merge_output_format': 'mp4',
             })
-        else:  # Лучшее качество (оригинал)
+        else:
             opts['format'] = 'best'
 
         with yt_dlp.YoutubeDL(opts) as ydl:
