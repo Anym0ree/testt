@@ -119,6 +119,16 @@ async def delayed_delete(message, delay):
     except:
         pass
 
+async def safe_delete_message_obj(message_obj):
+    try:
+        await message_obj.delete()
+    except Exception:
+        pass
+
+def safe_remove_file(path):
+    if path and isinstance(path, str) and os.path.exists(path):
+        os.remove(path)
+
 def is_valid_url(url):
     return re.match(r'^https?://', url) is not None
 
@@ -449,7 +459,7 @@ async def checkin_emotions(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=CheckinStates.note)
 async def checkin_note(message: types.Message, state: FSMContext):
-        if message.text in ("❌ Отмена", "⬅️ Назад"):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
         await safe_finish(state, message)
         return
     data = await state.get_data()
@@ -968,7 +978,7 @@ async def reminder_edit_date(message: types.Message, state: FSMContext):
             day = int(day_month[0])
             month_name = day_month[1]
             month_map = {
-                "января": 1, "феваля": 2, "марта": 3, "апреля": 4,
+                "января": 1, "февраля": 2, "марта": 3, "апреля": 4,
                 "мая": 5, "июня": 6, "июля": 7, "августа": 8,
                 "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12
             }
@@ -1067,7 +1077,7 @@ async def export_all_data(message: types.Message):
         await message.answer_document(f, caption="📁 Вот все твои данные")
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
-@dp.message_handler(text=["🎵 SoundCloud", "📺 YouTube", "🎧 VK", "🎵 Spotify", "🌐 Другой URL"])
+@dp.message_handler(text=["🎵 SoundCloud", "📺 YouTube", "📌 Pinterest", "🎧 VK", "🎵 Spotify", "🌐 Другой URL"])
 async def export_any_start(message: types.Message, state: FSMContext):
     await ExportStates.url.set()
     if message.text == "🌐 Другой URL":
@@ -1097,6 +1107,11 @@ async def export_any_format(message: types.Message, state: FSMContext):
         await export_menu(message)
         return
     fmt = message.text
+    allowed_formats = {"MP3 (аудио)", "WAV (аудио)", "MP4 (видео)", "Лучшее качество (оригинал)"}
+    if fmt not in allowed_formats:
+        await send_temp_message(message.chat.id, "❌ Выбери формат только кнопками.", 3)
+        await edit_or_send(state, message.chat.id, "Выбери формат:", get_download_formats_keyboard(), edit=True)
+        return
     data = await state.get_data()
     url = data.get('url')
     if not url:
@@ -1113,12 +1128,15 @@ async def export_any_format(message: types.Message, state: FSMContext):
             raise Exception("Скачанный файл не найден после завершения загрузки.")
 
         await bot.edit_message_text("✅ Скачивание завершено! Отправляю файл...", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
+        file_size = os.path.getsize(filename)
+        if file_size > 50 * 1024 * 1024:
+            raise Exception("Файл слишком большой для отправки в Telegram (более 50 MB).")
         with open(filename, 'rb') as f:
             await message.answer_document(f, caption=f"🎵 {title}")
-        os.remove(filename)
-        await progress_msg.delete()
+        safe_remove_file(filename)
+        await safe_delete_message_obj(progress_msg)
     except Exception as e:
-        logging.error(f"Ошибк загрузки: {e}")
+        logging.error(f"Ошибка загрузки: {e}")
         error_msg = str(e)
         if "Sign in to confirm you’re not a bot" in error_msg:
             await bot.edit_message_text(
@@ -1131,7 +1149,7 @@ async def export_any_format(message: types.Message, state: FSMContext):
         else:
             await bot.edit_message_text(f"❌ Ошибка: {error_msg[:200]}\nПроверь ссылку и попробуй снова.", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
         await asyncio.sleep(3)
-        await progress_msg.delete()
+        await safe_delete_message_obj(progress_msg)
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
 # ========== КОНВЕРТЕР ==========
@@ -1243,27 +1261,33 @@ async def converter_format(message: types.Message, state: FSMContext):
             raise Exception(f"File too large: {file_size / (1024*1024):.1f} MB > 50 MB limit. Try a different format (MP4 or WEBM may be smaller) or reduce resolution manually.")
 
         spinner_task.cancel()
+        try:
+            await spinner_task
+        except asyncio.CancelledError:
+            pass
         await bot.edit_message_text("✅ Конвертация завершена! Отправляю файл...", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
         with open(output_path, 'rb') as f:
             await message.answer_document(f, caption=f"✅ Конвертировано в {fmt.upper()}")
-        os.remove(input_path)
-        os.remove(output_path)
-        await progress_msg.delete()
+        safe_remove_file(input_path)
+        safe_remove_file(output_path)
+        await safe_delete_message_obj(progress_msg)
     except Exception as e:
         logging.error(f"Ошибка конвертации: {e}")
         spinner_task.cancel()
+        try:
+            await spinner_task
+        except asyncio.CancelledError:
+            pass
         error_msg = str(e)
         if "File too large" in error_msg:
             await bot.edit_message_text(f"❌ {error_msg}", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
         else:
             await bot.edit_message_text(f"❌ Ошибка конвертации: {error_msg}\nПопробуй другой файл или формат.", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
         await asyncio.sleep(3)
-        await progress_msg.delete()
+        await safe_delete_message_obj(progress_msg)
     finally:
-        if os.path.exists(input_path):
-            os.remove(input_path)
-        if os.path.exists(output_path):
-            os.remove(output_path)
+        safe_remove_file(input_path)
+        safe_remove_file(output_path)
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
 # ========== НАСТРОЙКИ ==========
