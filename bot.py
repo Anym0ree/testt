@@ -995,6 +995,22 @@ async def export_any_start(message: types.Message, state: FSMContext):
     else:
         await edit_or_send(state, message.chat.id, f"📎 Отправь ссылку на трек или плейлист {message.text}:", get_back_button(), edit=False)
 
+@dp.message_handler(state=ExportStates.url)
+async def export_any_url(message: types.Message, state: FSMContext):
+    if message.text == "⬅️ Назад":
+        await delete_dialog_message(state)
+        await state.finish()
+        await export_menu(message)
+        return
+    url = message.text.strip()
+    if not is_valid_url(url):
+        await send_temp_message(message.chat.id, "❌ Это не похоже на ссылку. Пожалуйста, отправь корректный URL (начинающийся с http:// или https://).", 4)
+        await edit_or_send(state, message.chat.id, "📎 Отправь ссылку на трек или плейлист:", get_back_button(), edit=True)
+        return
+    await state.update_data(url=url)
+    await ExportStates.format.set()
+    await edit_or_send(state, message.chat.id, "Выбери формат:", get_download_formats_keyboard(), edit=True)
+
 @dp.message_handler(state=ExportStates.format)
 async def export_any_format(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
@@ -1095,6 +1111,7 @@ async def export_any_format(message: types.Message, state: FSMContext):
         await asyncio.sleep(3)
         await progress_msg.delete()
     await message.answer("Главное меню", reply_markup=get_main_menu())
+
 # ========== КОНВЕРТЕР ==========
 @dp.message_handler(text="🔄 Конвертер")
 async def converter_menu(message: types.Message, state: FSMContext):
@@ -1186,6 +1203,7 @@ async def converter_format(message: types.Message, state: FSMContext):
         if os.path.exists(input_path):
             os.remove(input_path)
     await message.answer("Главное меню", reply_markup=get_main_menu())
+
 # ========== НАСТРОЙКИ ==========
 @dp.message_handler(text="⚙️ Настройки")
 async def settings(message: types.Message):
@@ -1234,7 +1252,7 @@ async def reset_cancel(callback_query: types.CallbackQuery):
     await callback_query.answer()
     await asyncio.sleep(2)
     await callback_query.message.delete()
-    await await message.answer("Главное меню", reply_markup=get_main_menu()) reply_markup=get_main_menu())
+    await callback_query.message.answer("Главное меню", reply_markup=get_main_menu())
 
 # ========== УВЕДОМЛЕНИЯ ==========
 scheduler = None
