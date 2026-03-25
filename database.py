@@ -192,7 +192,7 @@ class Database:
     # === ЗАМЕТКИ ===
     def add_note(self, user_id, text):
         data = self._load_json(user_id, "notes.json")
-        note_id = len(data) + 1
+        note_id = max([n.get("id", 0) for n in data], default=0) + 1
         record = {
             "id": note_id,
             "text": text,
@@ -232,7 +232,7 @@ class Database:
             return None
 
         reminders = self._load_json(user_id, "reminders.json")
-        reminder_id = len(reminders) + 1
+        reminder_id = max([r.get("id", 0) for r in reminders], default=0) + 1
         reminder = {
             "id": reminder_id,
             "text": text,
@@ -246,15 +246,15 @@ class Database:
         self._save_json(user_id, "reminders.json", reminders)
 
         if advance_type:
-            adv_date = self._get_advance_date(target_date, advance_type)
-            adv_dt = datetime.strptime(f"{adv_date} {target_time}", "%Y-%m-%d %H:%M")
+            adv_dt = self._get_advance_datetime(target_date, target_time, advance_type)
             if adv_dt >= local_dt:
                 advance_reminder = {
-                    "id": reminder_id + 1000,
+                    "id": max([r.get("id", 0) for r in reminders], default=0) + 1,
                     "text": f"⚠️ ЗА ДЕНЬ: {text}" if advance_type == "day" else f"⚠️ ЗА 3 ЧАСА: {text}" if advance_type == "3h" else f"⚠️ ЗА 1 ЧАС: {text}",
-                    "date": adv_date,
-                    "time": target_time,
+                    "date": adv_dt.strftime("%Y-%m-%d"),
+                    "time": adv_dt.strftime("%H:%M"),
                     "advance_type": None,
+                    "advance_kind": advance_type,
                     "is_active": True,
                     "parent_id": reminder_id,
                     "created_at": datetime.utcnow().isoformat()
@@ -264,8 +264,8 @@ class Database:
 
         return reminder_id
 
-    def _get_advance_date(self, target_date, advance_type):
-        target = datetime.strptime(target_date, "%Y-%m-%d")
+    def _get_advance_datetime(self, target_date, target_time, advance_type):
+        target = datetime.strptime(f"{target_date} {target_time}", "%Y-%m-%d %H:%M")
         if advance_type == "day":
             advance = target - timedelta(days=1)
         elif advance_type == "3h":
@@ -273,38 +273,76 @@ class Database:
         elif advance_type == "1h":
             advance = target - timedelta(hours=1)
         else:
-            return target_date
-        return advance.strftime("%Y-%m-%d")
+            return target
+        return advance
 
     def get_active_reminders(self, user_id):
         reminders = self._load_json(user_id, "reminders.json")
         return [r for r in reminders if r.get("is_active", True)]
 
+    def _get_related_reminder_ids(self, reminders, reminder_id):
+        selected = next((r for r in reminders if r.get("id") == reminder_id), None)
+        if not selected:
+            return []
+        if selected.get("parent_id"):
+            parent_id = selected["parent_id"]
+        else:
+            parent_id = selected["id"]
+        related_ids = [r["id"] for r in reminders if r.get("id") == parent_id or r.get("parent_id") == parent_id]
+        return related_ids
+
     def delete_reminder(self, user_id, reminder_id):
         reminders = self._load_json(user_id, "reminders.json")
+        related_ids = self._get_related_reminder_ids(reminders, reminder_id)
         for r in reminders:
-            if r.get("id") == reminder_id:
+            if r.get("id") in related_ids:
                 r["is_active"] = False
-                break
         self._save_json(user_id, "reminders.json", reminders)
         return True
 
     def update_reminder_text(self, user_id, reminder_id, new_text):
         reminders = self._load_json(user_id, "reminders.json")
+        related_ids = self._get_related_reminder_ids(reminders, reminder_id)
+        target = next((r for r in reminders if r.get("id") == reminder_id), None)
+        if not target:
+            return False
+        target["text"] = new_text
+        if target.get("parent_id"):
+            self._save_json(user_id, "reminders.json", reminders)
+            return True
+
         for r in reminders:
-            if r.get("id") == reminder_id:
-                r["text"] = new_text
-                break
+            if r.get("id") in related_ids and r.get("id") != reminder_id:
+                kind = r.get("advance_kind", "day")
+                if kind == "day":
+                    r["text"] = f"⚠️ ЗА ДЕНЬ: {new_text}"
+                elif kind == "3h":
+                    r["text"] = f"⚠️ ЗА 3 ЧАСА: {new_text}"
+                elif kind == "1h":
+                    r["text"] = f"⚠️ ЗА 1 ЧАС: {new_text}"
         self._save_json(user_id, "reminders.json", reminders)
         return True
 
     def update_reminder_time(self, user_id, reminder_id, new_date, new_time):
         reminders = self._load_json(user_id, "reminders.json")
+        target = next((r for r in reminders if r.get("id") == reminder_id), None)
+        if not target:
+            return False
+        target["date"] = new_date
+        target["time"] = new_time
+        if target.get("parent_id"):
+            self._save_json(user_id, "reminders.json", reminders)
+            return True
+
+        related_ids = self._get_related_reminder_ids(reminders, reminder_id)
         for r in reminders:
-            if r.get("id") == reminder_id:
-                r["date"] = new_date
-                r["time"] = new_time
-                break
+            if r.get("id") in related_ids and r.get("id") != reminder_id:
+                kind = r.get("advance_kind")
+                if not kind:
+                    continue
+                adv_dt = self._get_advance_datetime(new_date, new_time, kind)
+                r["date"] = adv_dt.strftime("%Y-%m-%d")
+                r["time"] = adv_dt.strftime("%H:%M")
         self._save_json(user_id, "reminders.json", reminders)
         return True
 
