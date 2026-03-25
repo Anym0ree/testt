@@ -1234,7 +1234,7 @@ async def reset_cancel(callback_query: types.CallbackQuery):
     await callback_query.answer()
     await asyncio.sleep(2)
     await callback_query.message.delete()
-    await callback_query.message.answer("Главное меню", reply_markup=get_main_menu())
+    await await message.answer("Главное меню", reply_markup=get_main_menu()) reply_markup=get_main_menu())
 
 # ========== УВЕДОМЛЕНИЯ ==========
 scheduler = None
