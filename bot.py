@@ -892,21 +892,45 @@ async def converter_format(message: types.Message, state: FSMContext):
         return
     await delete_dialog_message(state)
     await state.finish()
-    progress_msg = await message.answer("⏳ Конвертирую... [░░░░░░░░░░] 0%")
+
+    # Спиннер
+    spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+    progress_msg = await message.answer(f"⏳ Конвертирую... {spinner[0]}")
+
+    async def update_spinner():
+        i = 0
+        while True:
+            await asyncio.sleep(0.3)
+            i = (i + 1) % len(spinner)
+            try:
+                await bot.edit_message_text(f"⏳ Конвертирую... {spinner[i]}", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
+            except:
+                break
+
+    spinner_task = asyncio.create_task(update_spinner())
+
     try:
-        for i in range(1, 6):
-            await asyncio.sleep(1)
-            bar = "█" * i + "░" * (5 - i)
-            await bot.edit_message_text(f"⏳ Конвертирую... [{bar}] {i*20}%", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
         ffmpeg_path = os.path.join(os.getcwd(), 'ffmpeg')
         if not os.path.exists(ffmpeg_path):
             ffmpeg_path = 'ffmpeg'
         output_path = f"/tmp/output.{fmt.lower()}"
         cmd = [ffmpeg_path, '-i', input_path, output_path]
+        # Для GIF можно добавить опции для уменьшения размера (если нужно)
+        if fmt == "GIF":
+            # Добавим ограничение размера: масштабирование до 640x480, палитра 256 цветов
+            cmd = [ffmpeg_path, '-i', input_path, '-vf', 'scale=640:-1:flags=lanczos,fps=15,split[s0][s1];[s0]palettegen=max_colors=256[p];[s1][p]paletteuse', '-loop', '0', output_path]
         result = subprocess.run(cmd, check=False, capture_output=True, text=True)
         if result.returncode != 0:
             error_msg = result.stderr.strip()[:200]
             raise Exception(f"ffmpeg error: {error_msg}")
+
+        # Проверка размера файла
+        file_size = os.path.getsize(output_path)
+        max_size = 50 * 1024 * 1024  # 50 MB
+        if file_size > max_size:
+            raise Exception(f"File too large: {file_size / (1024*1024):.1f} MB > 50 MB limit. Try a different format (MP4 or WEBM may be smaller) or reduce resolution manually.")
+
+        spinner_task.cancel()
         await bot.edit_message_text("✅ Конвертация завершена! Отправляю файл...", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
         with open(output_path, 'rb') as f:
             await message.answer_document(f, caption=f"✅ Конвертировано в {fmt.upper()}")
@@ -915,7 +939,12 @@ async def converter_format(message: types.Message, state: FSMContext):
         await progress_msg.delete()
     except Exception as e:
         logging.error(f"Ошибка конвертации: {e}")
-        await bot.edit_message_text(f"❌ Ошибка конвертации: {e}\nПопробуй другой файл или формат.", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
+        spinner_task.cancel()
+        error_msg = str(e)
+        if "File too large" in error_msg:
+            await bot.edit_message_text(f"❌ {error_msg}", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
+        else:
+            await bot.edit_message_text(f"❌ Ошибка конвертации: {error_msg}\nПопробуй другой файл или формат.", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
         await asyncio.sleep(3)
         await progress_msg.delete()
     finally:
