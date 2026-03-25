@@ -59,6 +59,9 @@ def get_notes_list_keyboard(notes):
     for i, note in enumerate(notes):
         text = note['text'][:30] + "..." if len(note['text']) > 30 else note['text']
         buttons.append([InlineKeyboardButton(text=f"🗑 {text}", callback_data=f"note_del_{i}")])
+    # Добавляем кнопку редактирования заметки
+    if notes:
+        buttons.append([InlineKeyboardButton(text="✏️ Редактировать", callback_data="note_edit")])
     buttons.append([InlineKeyboardButton(text="❌ Закрыть", callback_data="close_notes")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -126,7 +129,7 @@ def get_settings_menu():
     buttons = [
         [KeyboardButton(text="🌍 Сменить город")],
         [KeyboardButton(text="🔄 Сброс данных")],
-        [KeyboardButton(text="❌ Назад")]
+        [KeyboardButton(text="⬅️ Назад")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
