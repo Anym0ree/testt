@@ -149,6 +149,7 @@ async def cmd_start(message: types.Message):
             "Главное меню — /menu",
             reply_markup=get_main_menu()
         )
+
 # ========== УСТАНОВКА ГОРОДА ==========
 @dp.message_handler(state=TimezoneStates.city)
 async def set_city(message: types.Message, state: FSMContext):
@@ -206,8 +207,24 @@ async def sleep_start(message: types.Message, state: FSMContext):
 @dp.message_handler(state=SleepStates.bed_time)
 async def sleep_bed_time(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
         return
     if message.text == "Другое":
         await edit_or_send(state, message.chat.id, "Введи время в формате ЧЧ:ММ (например 23:45):", None, edit=True)
@@ -225,8 +242,24 @@ async def sleep_bed_time_custom(message: types.Message, state: FSMContext):
 @dp.message_handler(state=SleepStates.wake_time)
 async def sleep_wake_time(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
         return
     if message.text == "Другое":
         await edit_or_send(state, message.chat.id, "Введи время в формате ЧЧ:ММ (например 09:15):", None, edit=True)
@@ -244,8 +277,24 @@ async def sleep_wake_time_custom(message: types.Message, state: FSMContext):
 @dp.message_handler(state=SleepStates.quality)
 async def sleep_quality(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
         return
     await state.update_data(quality=message.text)
     await SleepStates.next()
@@ -254,8 +303,24 @@ async def sleep_quality(message: types.Message, state: FSMContext):
 @dp.message_handler(state=SleepStates.woke_night)
 async def sleep_woke_night(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
         return
     await state.update_data(woke_night=message.text)
     await SleepStates.next()
@@ -264,8 +329,24 @@ async def sleep_woke_night(message: types.Message, state: FSMContext):
 @dp.message_handler(state=SleepStates.note)
 async def sleep_note(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
         return
     data = await state.get_data()
     note = message.text if message.text != "Пропустить" else ""
@@ -299,8 +380,24 @@ async def checkin_start(message: types.Message, state: FSMContext):
 @dp.message_handler(state=CheckinStates.energy)
 async def checkin_energy(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
         return
     await state.update_data(energy=message.text)
     await CheckinStates.next()
@@ -309,8 +406,24 @@ async def checkin_energy(message: types.Message, state: FSMContext):
 @dp.message_handler(state=CheckinStates.stress)
 async def checkin_stress(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
         return
     await state.update_data(stress=message.text)
     await CheckinStates.next()
@@ -320,8 +433,24 @@ async def checkin_stress(message: types.Message, state: FSMContext):
 @dp.message_handler(state=CheckinStates.emotions)
 async def checkin_emotions(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
         return
     if message.text == "✅ Готово":
         data = await state.get_data()
@@ -356,8 +485,24 @@ async def checkin_emotions_custom(message: types.Message, state: FSMContext):
 @dp.message_handler(state=CheckinStates.note)
 async def checkin_note(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
         return
     data = await state.get_data()
     note = message.text if message.text != "Пропустить" else ""
@@ -402,8 +547,24 @@ async def summary_start(message: types.Message, state: FSMContext):
 @dp.message_handler(state=DaySummaryStates.score)
 async def summary_score(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
         return
     await state.update_data(score=message.text)
     await DaySummaryStates.next()
@@ -412,8 +573,24 @@ async def summary_score(message: types.Message, state: FSMContext):
 @dp.message_handler(state=DaySummaryStates.best)
 async def summary_best(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
         return
     best = message.text if message.text != "Пропустить" else ""
     await state.update_data(best=best)
@@ -423,8 +600,24 @@ async def summary_best(message: types.Message, state: FSMContext):
 @dp.message_handler(state=DaySummaryStates.worst)
 async def summary_worst(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
         return
     worst = message.text if message.text != "Пропустить" else ""
     await state.update_data(worst=worst)
@@ -434,8 +627,24 @@ async def summary_worst(message: types.Message, state: FSMContext):
 @dp.message_handler(state=DaySummaryStates.gratitude)
 async def summary_gratitude(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
         return
     gratitude = message.text if message.text != "Пропустить" else ""
     await state.update_data(gratitude=gratitude)
@@ -445,8 +654,24 @@ async def summary_gratitude(message: types.Message, state: FSMContext):
 @dp.message_handler(state=DaySummaryStates.note)
 async def summary_note(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await message.answer("❌ Отменено", reply_markup=get_main_menu())
+        return
+    if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
         return
     data = await state.get_data()
     note = message.text if message.text != "Пропустить" else ""
@@ -477,6 +702,12 @@ async def add_food_drink_start(message: types.Message, state: FSMContext):
 @dp.message_handler(state=FoodDrinkStates.type)
 async def add_food_drink_type(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await food_drink_menu(message)
         return
@@ -505,10 +736,22 @@ async def view_food_drink_today(message: types.Message):
 @dp.message_handler(state=FoodStates.meal_type)
 async def food_meal_type(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
-        await food_drink_menu(message)
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
         return
     if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await food_drink_menu(message)
         return
@@ -519,6 +762,12 @@ async def food_meal_type(message: types.Message, state: FSMContext):
 @dp.message_handler(state=FoodStates.food_text)
 async def food_text(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await food_drink_menu(message)
         return
@@ -537,10 +786,22 @@ async def food_text(message: types.Message, state: FSMContext):
 @dp.message_handler(state=DrinkStates.drink_type)
 async def drink_type(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
-        await food_drink_menu(message)
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
         return
     if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await food_drink_menu(message)
         return
@@ -551,10 +812,22 @@ async def drink_type(message: types.Message, state: FSMContext):
 @dp.message_handler(state=DrinkStates.amount)
 async def drink_amount(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
-        await food_drink_menu(message)
+        await message.answer("❌ Отменено", reply_markup=get_main_menu())
         return
     if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await food_drink_menu(message)
         return
@@ -608,6 +881,12 @@ async def create_note_start(message: types.Message, state: FSMContext):
 @dp.message_handler(state=NoteStates.text)
 async def create_note_text(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await notes_reminders_main(message)
         return
@@ -630,6 +909,12 @@ async def create_reminder_start(message: types.Message, state: FSMContext):
 @dp.message_handler(state=ReminderStates.text)
 async def reminder_text(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await notes_reminders_main(message)
         return
@@ -640,6 +925,12 @@ async def reminder_text(message: types.Message, state: FSMContext):
 @dp.message_handler(state=ReminderStates.date)
 async def reminder_date(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await notes_reminders_main(message)
         return
@@ -686,6 +977,12 @@ async def reminder_date(message: types.Message, state: FSMContext):
 @dp.message_handler(state=ReminderStates.hour)
 async def reminder_hour(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await notes_reminders_main(message)
         return
@@ -707,6 +1004,12 @@ async def reminder_hour(message: types.Message, state: FSMContext):
 @dp.message_handler(state=ReminderStates.minute)
 async def reminder_minute(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await notes_reminders_main(message)
         return
@@ -724,6 +1027,12 @@ async def reminder_minute(message: types.Message, state: FSMContext):
 @dp.message_handler(state=ReminderStates.advance)
 async def reminder_advance(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
+        data = await state.get_data()
+        if data.get('msg_id'):
+            try:
+                await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
+            except:
+                pass
         await state.finish()
         await notes_reminders_main(message)
         return
@@ -1010,14 +1319,13 @@ async def export_any_start(message: types.Message, state: FSMContext):
 @dp.message_handler(state=ExportStates.url)
 async def export_any_url(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
-        await state.finish()
-        # Удаляем диалоговое сообщение
         data = await state.get_data()
         if data.get('msg_id'):
             try:
                 await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
             except:
                 pass
+        await state.finish()
         await export_menu(message)
         return
     url = message.text.strip()
@@ -1028,33 +1336,30 @@ async def export_any_url(message: types.Message, state: FSMContext):
 @dp.message_handler(state=ExportStates.format)
 async def export_any_format(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
-        await state.finish()
         data = await state.get_data()
         if data.get('msg_id'):
             try:
                 await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
             except:
                 pass
+        await state.finish()
         await export_menu(message)
         return
     fmt = message.text
     data = await state.get_data()
     url = data['url']
     await state.finish()
-    # Удаляем диалоговое сообщение
     if data.get('msg_id'):
         try:
             await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
         except:
             pass
-    # Показываем прогресс-бар
     progress_msg = await message.answer("⏳ Скачиваю... [░░░░░░░░░░] 0%")
     try:
         for i in range(1, 6):
             await asyncio.sleep(1)
             bar = "█" * i + "░" * (5 - i)
             await bot.edit_message_text(f"⏳ Скачиваю... [{bar}] {i*20}%", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
-        # Реальное скачивание
         if fmt == "MP3 (аудио)":
             opts = {
                 'format': 'bestaudio/best',
@@ -1108,7 +1413,6 @@ async def export_any_format(message: types.Message, state: FSMContext):
 @dp.message_handler(text="🔄 Конвертер")
 async def converter_menu(message: types.Message, state: FSMContext):
     await ConverterStates.file.set()
-    # Сохраняем сообщение-приглашение
     m = await message.answer("Отправь мне файл (видео, аудио, изображение), который хочешь конвертировать.", reply_markup=get_back_button())
     await state.update_data(msg_id=m.message_id, chat_id=m.chat.id)
 
@@ -1146,14 +1450,12 @@ async def converter_file(message: types.Message, state: FSMContext):
     with open(temp_input, 'wb') as f:
         f.write(downloaded_file.getvalue())
     await state.update_data(input_path=temp_input)
-    # Удаляем пригласительное сообщение
     data = await state.get_data()
     if data.get('msg_id'):
         try:
             await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
         except:
             pass
-    # Отправляем новое сообщение для выбора формата
     m = await message.answer("Выбери целевой формат:", reply_markup=get_converter_formats_keyboard())
     await state.update_data(msg_id=m.message_id, chat_id=m.chat.id)
     await ConverterStates.format.set()
@@ -1181,14 +1483,12 @@ async def converter_format(message: types.Message, state: FSMContext):
         await send_temp_message(message.chat.id, "❌ Файл не найден. Попробуй ещё раз.", 3)
         await state.finish()
         return
-    # Удаляем диалоговое сообщение
     if data.get('msg_id'):
         try:
             await bot.delete_message(chat_id=data['chat_id'], message_id=data['msg_id'])
         except:
             pass
     await state.finish()
-    # Прогресс-бар
     progress_msg = await message.answer("⏳ Конвертирую... [░░░░░░░░░░] 0%")
     try:
         for i in range(1, 6):
@@ -1219,7 +1519,6 @@ async def converter_format(message: types.Message, state: FSMContext):
         if os.path.exists(input_path):
             os.remove(input_path)
     await message.answer("Главное меню", reply_markup=get_main_menu())
-
 
 # ========== НАСТРОЙКИ ==========
 @dp.message_handler(text="⚙️ Настройки")
