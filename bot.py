@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import re
-import subprocess
+import tempfile
 from datetime import datetime, timedelta
 
 import yt_dlp
@@ -62,6 +62,7 @@ class TimezoneStates(StatesGroup):
 
 class NoteStates(StatesGroup):
     text = State()
+    edit_text = State()
 
 class ReminderStates(StatesGroup):
     text = State()
@@ -128,6 +129,89 @@ async def safe_finish(state: FSMContext, message: types.Message, error_text: str
         await send_temp_message(message.chat.id, error_text, 3)
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
+def is_valid_time_text(value: str) -> bool:
+    if not re.match(r"^\d{2}:\d{2}$", value):
+        return False
+    hh, mm = value.split(":")
+    return 0 <= int(hh) <= 23 and 0 <= int(mm) <= 59
+
+def is_valid_score_text(value: str) -> bool:
+    return value.isdigit() and 1 <= int(value) <= 10
+
+async def download_media_with_ytdlp(url: str, fmt: str, progress_msg: types.Message):
+    loop = asyncio.get_running_loop()
+    last_percent = {"value": 0.0}
+
+    async def update_progress(percent: float):
+        try:
+            bar = "█" * int(percent // 10) + "░" * (10 - int(percent // 10))
+            text = f"⏳ Скачивание: [{bar}] {percent:.0f}%"
+            if percent >= 100:
+                text = "✅ Скачивание завершено! Обрабатываю файл..."
+            await bot.edit_message_text(text, chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
+        except Exception:
+            pass
+
+    def progress_hook(data):
+        if data.get("status") != "downloading":
+            return
+        percent_str = data.get("_percent_str", "0%").strip().replace("%", "")
+        try:
+            percent = float(percent_str)
+        except ValueError:
+            percent = 0.0
+        if percent - last_percent["value"] >= 5 or percent >= 100:
+            last_percent["value"] = percent
+            loop.call_soon_threadsafe(asyncio.create_task, update_progress(percent))
+
+    def sync_download():
+        is_youtube = 'youtube.com' in url or 'youtu.be' in url
+        opts = {
+            "outtmpl": "/tmp/%(title).120s-%(id)s.%(ext)s",
+            "progress_hooks": [progress_hook],
+            "noplaylist": False,
+        }
+        if is_youtube:
+            opts.update({
+                "extractor_args": {"youtube": {"player_client": ["android"], "skip": ["webpage"]}},
+                "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+                "sleep_interval": 5,
+                "sleep_requests": 5,
+            })
+        else:
+            opts["user_agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+        if fmt == "MP3 (аудио)":
+            opts.update({
+                "format": "bestaudio/best",
+                "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
+            })
+        elif fmt == "WAV (аудио)":
+            opts.update({
+                "format": "bestaudio/best",
+                "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "wav"}],
+            })
+        elif fmt == "MP4 (видео)":
+            opts.update({"format": "bestvideo+bestaudio/best", "merge_output_format": "mp4"})
+        else:
+            opts["format"] = "best"
+
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            downloaded_file = None
+            requested = info.get("requested_downloads") if isinstance(info, dict) else None
+            if requested and isinstance(requested, list):
+                downloaded_file = requested[0].get("filepath")
+            if not downloaded_file:
+                downloaded_file = ydl.prepare_filename(info)
+                if fmt == "MP3 (аудио)":
+                    downloaded_file = downloaded_file.rsplit(".", 1)[0] + ".mp3"
+                elif fmt == "WAV (аудио)":
+                    downloaded_file = downloaded_file.rsplit(".", 1)[0] + ".wav"
+            return downloaded_file, info.get("title", "файл")
+
+    return await asyncio.to_thread(sync_download)
+
 # ========== КОМАНДЫ ==========
 @dp.message_handler(commands=['start'])
 async def cmd_start(message: types.Message):
@@ -175,6 +259,9 @@ async def set_city(message: types.Message, state: FSMContext):
     elif message.text == "Другое":
         await message.answer("Введи смещение в часах от UTC (например, 3 для Москвы, -5 для Нью-Йорка):\n\nПримеры: 3, -5, 0", reply_markup=types.ReplyKeyboardRemove())
         await TimezoneStates.offset.set()
+    elif message.text == "⬅️ Назад":
+        await message.answer("Главное меню", reply_markup=get_main_menu())
+        await state.finish()
     elif message.text == "❌ Отмена":
         await message.answer("❌ Отменено. Для настройки используй /start или настройки.", reply_markup=get_main_menu())
         await state.finish()
@@ -183,6 +270,10 @@ async def set_city(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=TimezoneStates.offset)
 async def set_offset(message: types.Message, state: FSMContext):
+    if message.text in ("⬅️ Назад", "❌ Отмена"):
+        await message.answer("Выбор часового пояса отменён.", reply_markup=get_main_menu())
+        await state.finish()
+        return
     try:
         offset = int(message.text.strip())
         db.set_user_timezone(message.from_user.id, offset)
@@ -216,14 +307,18 @@ async def sleep_bed_time(message: types.Message, state: FSMContext):
         await safe_finish(state, message)
         return
     if message.text == "Другое":
-        await edit_or_send(state, message.chat.id, "Введи время в формате ЧЧ:ММ (например 23:45):", None, edit=True)
+        await state.update_data(awaiting_custom_bed_time=True)
+        await edit_or_send(state, message.chat.id, "Введи время в формате ЧЧ:ММ (например 23:45):", get_back_button(), edit=True)
         return
-    await state.update_data(bed_time=message.text)
-    await SleepStates.next()
-    await edit_or_send(state, message.chat.id, "Во сколько встал?", get_morning_time_buttons(), edit=True)
-
-@dp.message_handler(state=SleepStates.bed_time)
-async def sleep_bed_time_custom(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    if data.get("awaiting_custom_bed_time"):
+        if not is_valid_time_text(message.text):
+            await edit_or_send(state, message.chat.id, "❌ Неверный формат. Введи время как ЧЧ:ММ (например 23:45).", get_back_button(), edit=True)
+            return
+        await state.update_data(awaiting_custom_bed_time=False)
+    elif message.text not in {"22:00", "23:00", "00:00", "01:00", "02:00", "03:00"}:
+        await edit_or_send(state, message.chat.id, "Выбери время из кнопок или нажми «Другое».", get_time_buttons(), edit=True)
+        return
     await state.update_data(bed_time=message.text)
     await SleepStates.next()
     await edit_or_send(state, message.chat.id, "Во сколько встал?", get_morning_time_buttons(), edit=True)
@@ -234,14 +329,18 @@ async def sleep_wake_time(message: types.Message, state: FSMContext):
         await safe_finish(state, message)
         return
     if message.text == "Другое":
-        await edit_or_send(state, message.chat.id, "Введи время в формате ЧЧ:ММ (например 09:15):", None, edit=True)
+        await state.update_data(awaiting_custom_wake_time=True)
+        await edit_or_send(state, message.chat.id, "Введи время в формате ЧЧ:ММ (например 09:15):", get_back_button(), edit=True)
         return
-    await state.update_data(wake_time=message.text)
-    await SleepStates.next()
-    await edit_or_send(state, message.chat.id, "Качество сна? (1-10)", get_energy_stress_buttons(), edit=True)
-
-@dp.message_handler(state=SleepStates.wake_time)
-async def sleep_wake_time_custom(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    if data.get("awaiting_custom_wake_time"):
+        if not is_valid_time_text(message.text):
+            await edit_or_send(state, message.chat.id, "❌ Неверный формат. Введи время как ЧЧ:ММ (например 09:15).", get_back_button(), edit=True)
+            return
+        await state.update_data(awaiting_custom_wake_time=False)
+    elif message.text not in {"06:00", "07:00", "08:00", "09:00", "10:00", "11:00", "12:00"}:
+        await edit_or_send(state, message.chat.id, "Выбери время из кнопок или нажми «Другое».", get_morning_time_buttons(), edit=True)
+        return
     await state.update_data(wake_time=message.text)
     await SleepStates.next()
     await edit_or_send(state, message.chat.id, "Качество сна? (1-10)", get_energy_stress_buttons(), edit=True)
@@ -250,6 +349,9 @@ async def sleep_wake_time_custom(message: types.Message, state: FSMContext):
 async def sleep_quality(message: types.Message, state: FSMContext):
     if message.text in ("❌ Отмена", "⬅️ Назад"):
         await safe_finish(state, message)
+        return
+    if not is_valid_score_text(message.text):
+        await edit_or_send(state, message.chat.id, "❌ Введи оценку от 1 до 10.", get_energy_stress_buttons(), edit=True)
         return
     await state.update_data(quality=message.text)
     await SleepStates.next()
@@ -298,6 +400,9 @@ async def checkin_energy(message: types.Message, state: FSMContext):
     if message.text in ("❌ Отмена", "⬅️ Назад"):
         await safe_finish(state, message)
         return
+    if not is_valid_score_text(message.text):
+        await edit_or_send(state, message.chat.id, "❌ Введи число от 1 до 10.", get_energy_stress_buttons(), edit=True)
+        return
     await state.update_data(energy=message.text)
     await CheckinStates.next()
     await edit_or_send(state, message.chat.id, "Стресс? (1-10)", get_energy_stress_buttons(), edit=True)
@@ -306,6 +411,9 @@ async def checkin_energy(message: types.Message, state: FSMContext):
 async def checkin_stress(message: types.Message, state: FSMContext):
     if message.text in ("❌ Отмена", "⬅️ Назад"):
         await safe_finish(state, message)
+        return
+    if not is_valid_score_text(message.text):
+        await edit_or_send(state, message.chat.id, "❌ Введи число от 1 до 10.", get_energy_stress_buttons(), edit=True)
         return
     await state.update_data(stress=message.text)
     await CheckinStates.next()
@@ -339,17 +447,9 @@ async def checkin_emotions(message: types.Message, state: FSMContext):
     else:
         await edit_or_send(state, message.chat.id, f"⚠️ Эмоция '{message.text}' уже добавлена\nВыбрано: {', '.join(emotions_list)}", get_emotion_buttons(), edit=True)
 
-@dp.message_handler(state=CheckinStates.emotions)
-async def checkin_emotions_custom(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    emotions_list = data.get("emotions_list", [])
-    emotions_list.append(message.text)
-    await state.update_data(emotions_list=emotions_list)
-    await edit_or_send(state, message.chat.id, f"✅ Добавлено: {message.text}\nВыбрано: {', '.join(emotions_list)}\n\nВыбери ещё или нажми '✅ Готово'", get_emotion_buttons(), edit=True)
-
 @dp.message_handler(state=CheckinStates.note)
 async def checkin_note(message: types.Message, state: FSMContext):
-    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        if message.text in ("❌ Отмена", "⬅️ Назад"):
         await safe_finish(state, message)
         return
     data = await state.get_data()
@@ -391,6 +491,9 @@ async def summary_start(message: types.Message, state: FSMContext):
 async def summary_score(message: types.Message, state: FSMContext):
     if message.text in ("❌ Отмена", "⬅️ Назад"):
         await safe_finish(state, message)
+        return
+    if not is_valid_score_text(message.text):
+        await edit_or_send(state, message.chat.id, "❌ Введи оценку от 1 до 10.", get_energy_stress_buttons(), edit=True)
         return
     await state.update_data(score=message.text)
     await DaySummaryStates.next()
@@ -491,7 +594,7 @@ async def food_meal_type(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=FoodStates.food_text)
 async def food_text(message: types.Message, state: FSMContext):
-    if message.text == "⬅️ Назад":
+    if message.text in ("⬅️ Назад", "❌ Отмена"):
         await safe_finish(state, message, "Добавление отменено")
         return
     data = await state.get_data()
@@ -516,20 +619,15 @@ async def drink_amount(message: types.Message, state: FSMContext):
         await safe_finish(state, message)
         return
     if message.text == "Другое":
-        await edit_or_send(state, message.chat.id, "Введи количество (например: 0.5 л, 2 стакана):", None, edit=True)
+        await state.update_data(awaiting_custom_drink_amount=True)
+        await edit_or_send(state, message.chat.id, "Введи количество (например: 0.5 л, 2 стакана):", get_back_button(), edit=True)
         return
     data = await state.get_data()
-    drink_type = data["drink_type"]
-    amount = message.text
-    db.add_drink(message.from_user.id, drink_type, amount)
-    await delete_dialog_message(state)
-    await state.finish()
-    await send_temp_message(message.chat.id, f"✅ Добавлено: {drink_type} — {amount}", 2)
-    await message.answer("Главное меню", reply_markup=get_main_menu())
-
-@dp.message_handler(state=DrinkStates.amount)
-async def drink_amount_custom(message: types.Message, state: FSMContext):
-    data = await state.get_data()
+    if data.get("awaiting_custom_drink_amount"):
+        if not message.text.strip():
+            await edit_or_send(state, message.chat.id, "❌ Введи количество напитка текстом.", get_back_button(), edit=True)
+            return
+        await state.update_data(awaiting_custom_drink_amount=False)
     drink_type = data["drink_type"]
     amount = message.text
     db.add_drink(message.from_user.id, drink_type, amount)
@@ -680,6 +778,9 @@ async def reminder_advance(message: types.Message, state: FSMContext):
         "⌛ За 1 час": "1h",
         "🚫 Не надо": None
     }
+    if message.text not in advance_map:
+        await edit_or_send(state, message.chat.id, "❌ Выбери вариант из кнопок.", get_reminder_advance_buttons(), edit=True)
+        return
     advance_type = advance_map.get(message.text)
 
     data = await state.get_data()
@@ -707,60 +808,39 @@ async def list_notes(message: types.Message):
     if not notes:
         await message.answer("📋 У тебя пока нет заметок.", reply_markup=get_notes_reminders_main_menu())
         return
+    visible_notes = list(reversed(notes[-10:]))
     text = "📋 *Твои заметки:*\n\n"
-    for i, note in enumerate(reversed(notes[-10:]), 1):
+    for i, note in enumerate(visible_notes, 1):
         text += f"{i}. {note['text']}\n   📅 {note['date']} {note['time']}\n\n"
-    await message.answer(text, parse_mode="Markdown", reply_markup=get_notes_list_keyboard(notes))
+    await message.answer(text, parse_mode="Markdown", reply_markup=get_notes_list_keyboard(visible_notes))
 
 @dp.callback_query_handler(lambda c: c.data.startswith("note_del_"))
 async def delete_note(callback: types.CallbackQuery):
-    idx = int(callback.data.split("_")[-1])
-    notes = db.get_notes(callback.from_user.id)
-    if 0 <= idx < len(notes):
-        note_id = notes[idx]["id"]
-        db.delete_note_by_id(callback.from_user.id, note_id)
+    note_id = int(callback.data.split("_")[-1])
+    if db.delete_note_by_id(callback.from_user.id, note_id):
         await callback.answer("Заметка удалена", show_alert=False)
         await callback.message.edit_text("✅ Заметка удалена.")
         new_notes = db.get_notes(callback.from_user.id)
         if new_notes:
+            visible_notes = list(reversed(new_notes[-10:]))
             text = "📋 *Твои заметки:*\n\n"
-            for i, note in enumerate(reversed(new_notes[-10:]), 1):
+            for i, note in enumerate(visible_notes, 1):
                 text += f"{i}. {note['text']}\n   📅 {note['date']} {note['time']}\n\n"
-            await callback.message.answer(text, parse_mode="Markdown", reply_markup=get_notes_list_keyboard(new_notes))
+            await callback.message.answer(text, parse_mode="Markdown", reply_markup=get_notes_list_keyboard(visible_notes))
         else:
             await callback.message.answer("📋 У тебя пока нет заметок.", reply_markup=get_notes_reminders_main_menu())
     else:
         await callback.answer("Ошибка", show_alert=True)
 
-@dp.callback_query_handler(lambda c: c.data == "note_edit")
+@dp.callback_query_handler(lambda c: c.data.startswith("note_edit_"))
 async def edit_note_start(callback: types.CallbackQuery, state: FSMContext):
-    notes = db.get_notes(callback.from_user.id)
-    if not notes:
-        await callback.answer("Нет заметок для редактирования", show_alert=True)
-        return
-    # Показываем список заметок для выбора
-    buttons = []
-    for i, note in enumerate(notes):
-        text = note['text'][:30] + "..." if len(note['text']) > 30 else note['text']
-        buttons.append([InlineKeyboardButton(text=text, callback_data=f"note_edit_select_{i}")])
-    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="close_notes")])
-    await callback.message.edit_text("Выбери заметку для редактирования:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    await callback.answer()
-
-@dp.callback_query_handler(lambda c: c.data.startswith("note_edit_select_"))
-async def edit_note_select(callback: types.CallbackQuery, state: FSMContext):
-    idx = int(callback.data.split("_")[-1])
-    notes = db.get_notes(callback.from_user.id)
-    if idx < 0 or idx >= len(notes):
-        await callback.answer("Заметка не найдена", show_alert=True)
-        return
-    note_id = notes[idx]["id"]
+    note_id = int(callback.data.split("_")[-1])
     await state.update_data(edit_note_id=note_id)
-    await NoteStates.text.set()
+    await NoteStates.edit_text.set()
     await callback.message.edit_text("✏️ Введи новый текст для заметки:", reply_markup=get_back_button())
     await callback.answer()
 
-@dp.message_handler(state=NoteStates.text)
+@dp.message_handler(state=NoteStates.edit_text)
 async def update_note_text(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
         await safe_finish(state, message)
@@ -888,7 +968,7 @@ async def reminder_edit_date(message: types.Message, state: FSMContext):
             day = int(day_month[0])
             month_name = day_month[1]
             month_map = {
-                "января": 1, "февраля": 2, "марта": 3, "апреля": 4,
+                "января": 1, "феваля": 2, "марта": 3, "апреля": 4,
                 "мая": 5, "июня": 6, "июля": 7, "августа": 8,
                 "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12
             }
@@ -1026,91 +1106,19 @@ async def export_any_format(message: types.Message, state: FSMContext):
     await state.finish()
 
     progress_msg = await message.answer("⏳ Начинаю скачивание...")
-    last_percent = 0
-
-    def progress_hook(d):
-        nonlocal last_percent
-        if d['status'] == 'downloading':
-            percent_str = d.get('_percent_str', '0%').strip()
-            try:
-                percent = float(percent_str.replace('%', ''))
-            except:
-                percent = 0
-            if percent - last_percent >= 5 or percent == 100:
-                last_percent = percent
-                asyncio.create_task(update_progress(progress_msg, percent))
-
-    async def update_progress(msg, percent):
-        try:
-            bar = "█" * int(percent // 10) + "░" * (10 - int(percent // 10))
-            text = f"⏳ Скачивание: [{bar}] {percent:.0f}%"
-            if percent == 100:
-                text = "✅ Скачивание завершено! Обрабатываю файл..."
-            await bot.edit_message_text(text, chat_id=msg.chat.id, message_id=msg.message_id)
-        except:
-            pass
 
     try:
-        is_youtube = 'youtube.com' in url or 'youtu.be' in url
-        opts = {
-            'outtmpl': '%(title)s.%(ext)s',
-            'progress_hooks': [progress_hook],
-        }
-        if is_youtube:
-            opts.update({
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android'],
-                        'skip': ['webpage']
-                    }
-                },
-                'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-                'sleep_interval': 5,
-                'sleep_requests': 5,
-            })
-        else:
-            opts['user_agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-
-        if fmt == "MP3 (аудио)":
-            opts.update({
-                'format': 'bestaudio/best',
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }],
-            })
-        elif fmt == "WAV (аудио)":
-            opts.update({
-                'format': 'bestaudio/best',
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'wav',
-                }],
-            })
-        elif fmt == "MP4 (видео)":
-            opts.update({
-                'format': 'bestvideo+bestaudio/best',
-                'merge_output_format': 'mp4',
-            })
-        else:
-            opts['format'] = 'best'
-
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-            if fmt == "MP3 (аудио)":
-                filename = filename.rsplit('.', 1)[0] + '.mp3'
-            elif fmt == "WAV (аудио)":
-                filename = filename.rsplit('.', 1)[0] + '.wav'
+        filename, title = await download_media_with_ytdlp(url, fmt, progress_msg)
+        if not filename or not os.path.exists(filename):
+            raise Exception("Скачанный файл не найден после завершения загрузки.")
 
         await bot.edit_message_text("✅ Скачивание завершено! Отправляю файл...", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
         with open(filename, 'rb') as f:
-            await message.answer_document(f, caption=f"🎵 {info.get('title', 'файл')}")
+            await message.answer_document(f, caption=f"🎵 {title}")
         os.remove(filename)
         await progress_msg.delete()
     except Exception as e:
-        logging.error(f"Ошибка загрузки: {e}")
+        logging.error(f"Ошибк загрузки: {e}")
         error_msg = str(e)
         if "Sign in to confirm you’re not a bot" in error_msg:
             await bot.edit_message_text(
@@ -1133,17 +1141,21 @@ async def converter_menu(message: types.Message, state: FSMContext):
     m = await message.answer("Отправь мне файл (видео, аудио, изображение), который хочешь конвертировать.", reply_markup=get_back_button())
     await state.update_data(msg_id=m.message_id, chat_id=m.chat.id)
 
-@dp.message_handler(content_types=['document', 'video', 'audio'], state=ConverterStates.file)
-async def converter_file(message: types.Message, state: FSMContext):
+@dp.message_handler(state=ConverterStates.file, content_types=types.ContentTypes.TEXT)
+async def converter_file_text(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
         await safe_finish(state, message)
         return
+    await send_temp_message(message.chat.id, "❌ Отправь файл или нажми «Назад».", 3)
+
+@dp.message_handler(content_types=['document', 'video', 'audio'], state=ConverterStates.file)
+async def converter_file(message: types.Message, state: FSMContext):
     if not (message.document or message.video or message.audio):
         await send_temp_message(message.chat.id, "❌ Неподдерживаемый тип файла. Пожалуйста, отправь документ, видео или аудио.", 3)
         return
     if message.document:
         file_id = message.document.file_id
-        file_name = message.document.file_name
+        file_name = message.document.file_name or f"{message.document.file_unique_id}.bin"
     elif message.video:
         file_id = message.video.file_id
         file_name = f"{message.video.file_unique_id}.mp4"
@@ -1157,9 +1169,10 @@ async def converter_file(message: types.Message, state: FSMContext):
     try:
         file = await bot.get_file(file_id)
         downloaded_file = await bot.download_file(file.file_path)
-        temp_input = f"/tmp/{file_name}"
-        with open(temp_input, 'wb') as f:
-            f.write(downloaded_file.getvalue())
+        input_ext = os.path.splitext(file_name)[1] or ".bin"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=input_ext, dir="/tmp") as tmp_file:
+            tmp_file.write(downloaded_file.getvalue())
+            temp_input = tmp_file.name
         await state.update_data(input_path=temp_input)
         await delete_dialog_message(state)
         m = await message.answer("Выбери целевой формат:", reply_markup=get_converter_formats_keyboard())
@@ -1203,18 +1216,25 @@ async def converter_format(message: types.Message, state: FSMContext):
                 break
 
     spinner_task = asyncio.create_task(update_spinner())
+    output_path = None
 
     try:
         ffmpeg_path = os.path.join(os.getcwd(), 'ffmpeg')
         if not os.path.exists(ffmpeg_path):
             ffmpeg_path = 'ffmpeg'
-        output_path = f"/tmp/output.{fmt.lower()}"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{fmt.lower()}", dir="/tmp") as tmp_out:
+            output_path = tmp_out.name
         cmd = [ffmpeg_path, '-i', input_path, output_path]
         if fmt == "GIF":
             cmd = [ffmpeg_path, '-i', input_path, '-vf', 'scale=640:-1:flags=lanczos,fps=15,split[s0][s1];[s0]palettegen=max_colors=256[p];[s1][p]paletteuse', '-loop', '0', output_path]
-        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
-        if result.returncode != 0:
-            error_msg = result.stderr.strip()[:200]
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await process.communicate()
+        if process.returncode != 0:
+            error_msg = stderr.decode("utf-8", errors="ignore").strip()[:200]
             raise Exception(f"ffmpeg error: {error_msg}")
 
         file_size = os.path.getsize(output_path)
