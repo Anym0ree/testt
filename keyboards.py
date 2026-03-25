@@ -235,23 +235,32 @@ def get_export_menu():
     buttons = [
         [KeyboardButton(text="📥 Экспорт всех данных")],
         [KeyboardButton(text="🎵 SoundCloud")],
-        [KeyboardButton(text="📺 YouTube")],
-        [KeyboardButton(text="📌 Pinterest")],
-        [KeyboardButton(text="🎧 VK")],
-        [KeyboardButton(text="🎵 Spotify")],
+        [KeyboardButton(text="📌 Pinterest (видео)")],
         [KeyboardButton(text="🌐 Другой URL")],
         [KeyboardButton(text="⬅️ Назад")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
-def get_download_formats_keyboard():
-    buttons = [
-        [KeyboardButton(text="MP3 (аудио)")],
-        [KeyboardButton(text="WAV (аудио)")],
-        [KeyboardButton(text="MP4 (видео)")],
-        [KeyboardButton(text="Лучшее качество (оригинал)")],
-        [KeyboardButton(text="⬅️ Назад")]
-    ]
+def get_download_formats_keyboard(source=None):
+    if source == "🎵 SoundCloud":
+        buttons = [
+            [KeyboardButton(text="MP3 (аудио)")],
+            [KeyboardButton(text="WAV (аудио)")],
+            [KeyboardButton(text="⬅️ Назад")]
+        ]
+    elif source == "📌 Pinterest (видео)":
+        buttons = [
+            [KeyboardButton(text="MP4 (видео)")],
+            [KeyboardButton(text="⬅️ Назад")]
+        ]
+    else:
+        buttons = [
+            [KeyboardButton(text="MP3 (аудио)")],
+            [KeyboardButton(text="WAV (аудио)")],
+            [KeyboardButton(text="MP4 (видео)")],
+            [KeyboardButton(text="Лучшее качество (оригинал)")],
+            [KeyboardButton(text="⬅️ Назад")]
+        ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 def get_converter_formats_keyboard():
