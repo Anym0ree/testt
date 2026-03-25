@@ -56,12 +56,10 @@ def get_view_type_buttons():
 
 def get_notes_list_keyboard(notes):
     buttons = []
-    for i, note in enumerate(notes):
+    for note in notes:
         text = note['text'][:30] + "..." if len(note['text']) > 30 else note['text']
-        buttons.append([InlineKeyboardButton(text=f"🗑 {text}", callback_data=f"note_del_{i}")])
-    # Добавляем кнопку редактирования заметки
-    if notes:
-        buttons.append([InlineKeyboardButton(text="✏️ Редактировать", callback_data="note_edit")])
+        buttons.append([InlineKeyboardButton(text=f"✏️ {text}", callback_data=f"note_edit_{note['id']}")])
+        buttons.append([InlineKeyboardButton(text=f"🗑 Удалить", callback_data=f"note_del_{note['id']}")])
     buttons.append([InlineKeyboardButton(text="❌ Закрыть", callback_data="close_notes")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -95,7 +93,7 @@ def get_reminder_date_buttons():
         [KeyboardButton(text="📆 Завтра")],
         [KeyboardButton(text="📆 Послезавтра")],
         [KeyboardButton(text="🔢 Выбрать дату")],
-        [KeyboardButton(text="❌ Отмена")]
+        [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -104,14 +102,14 @@ def get_reminder_hour_buttons():
     row2 = [KeyboardButton(text=str(i)) for i in range(6, 12)]
     row3 = [KeyboardButton(text=str(i)) for i in range(12, 18)]
     row4 = [KeyboardButton(text=str(i)) for i in range(18, 24)]
-    buttons = [row1, row2, row3, row4, [KeyboardButton(text="❌ Отмена")]]
+    buttons = [row1, row2, row3, row4, [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отмена")]]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 def get_reminder_minute_buttons():
     buttons = [
         [KeyboardButton(text="00"), KeyboardButton(text="15")],
         [KeyboardButton(text="30"), KeyboardButton(text="45")],
-        [KeyboardButton(text="❌ Отмена")]
+        [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -121,7 +119,7 @@ def get_reminder_advance_buttons():
         [KeyboardButton(text="⏳ За 3 часа")],
         [KeyboardButton(text="⌛ За 1 час")],
         [KeyboardButton(text="🚫 Не надо")],
-        [KeyboardButton(text="❌ Отмена")]
+        [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -163,7 +161,7 @@ def get_meal_type_buttons():
     buttons = [
         [KeyboardButton(text="🍳 Завтрак"), KeyboardButton(text="🍱 Обед")],
         [KeyboardButton(text="🍲 Ужин"), KeyboardButton(text="🍎 Перекус")],
-        [KeyboardButton(text="❌ Отмена")]
+        [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -172,7 +170,7 @@ def get_drink_type_buttons():
         [KeyboardButton(text="💧 Вода"), KeyboardButton(text="☕️ Кофе")],
         [KeyboardButton(text="🍵 Чай"), KeyboardButton(text="🧃 Сок")],
         [KeyboardButton(text="🍺 Алкоголь"), KeyboardButton(text="⚡️ Энергетик")],
-        [KeyboardButton(text="❌ Отмена")]
+        [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -182,14 +180,14 @@ def get_drink_amount_buttons():
         [KeyboardButton(text="3+ чашек"), KeyboardButton(text="200 мл")],
         [KeyboardButton(text="300 мл"), KeyboardButton(text="500 мл")],
         [KeyboardButton(text="1 л"), KeyboardButton(text="Другое")],
-        [KeyboardButton(text="❌ Отмена")]
+        [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 def get_energy_stress_buttons():
     row = [KeyboardButton(text=str(i)) for i in range(1, 6)]
     row2 = [KeyboardButton(text=str(i)) for i in range(6, 11)]
-    buttons = [row, row2, [KeyboardButton(text="❌ Отмена")]]
+    buttons = [row, row2, [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отмена")]]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 def get_time_buttons():
@@ -197,7 +195,8 @@ def get_time_buttons():
         [KeyboardButton(text="22:00"), KeyboardButton(text="23:00")],
         [KeyboardButton(text="00:00"), KeyboardButton(text="01:00")],
         [KeyboardButton(text="02:00"), KeyboardButton(text="03:00")],
-        [KeyboardButton(text="Другое"), KeyboardButton(text="❌ Отмена")]
+        [KeyboardButton(text="Другое")],
+        [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -207,13 +206,14 @@ def get_morning_time_buttons():
         [KeyboardButton(text="08:00"), KeyboardButton(text="09:00")],
         [KeyboardButton(text="10:00"), KeyboardButton(text="11:00")],
         [KeyboardButton(text="12:00"), KeyboardButton(text="Другое")],
-        [KeyboardButton(text="❌ Отмена")]
+        [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 def get_skip_markup_text():
     buttons = [
-        [KeyboardButton(text="Пропустить"), KeyboardButton(text="❌ Отмена")]
+        [KeyboardButton(text="Пропустить")],
+        [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -222,7 +222,8 @@ def get_timezone_buttons():
         [KeyboardButton(text="Москва (UTC+3)"), KeyboardButton(text="Санкт-Петербург (UTC+3)")],
         [KeyboardButton(text="Екатеринбург (UTC+5)"), KeyboardButton(text="Новосибирск (UTC+7)")],
         [KeyboardButton(text="Владивосток (UTC+10)"), KeyboardButton(text="Калининград (UTC+2)")],
-        [KeyboardButton(text="Другое"), KeyboardButton(text="❌ Отмена")]
+        [KeyboardButton(text="Другое")],
+        [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
