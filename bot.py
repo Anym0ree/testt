@@ -995,22 +995,6 @@ async def export_any_start(message: types.Message, state: FSMContext):
     else:
         await edit_or_send(state, message.chat.id, f"📎 Отправь ссылку на трек или плейлист {message.text}:", get_back_button(), edit=False)
 
-@dp.message_handler(state=ExportStates.url)
-async def export_any_url(message: types.Message, state: FSMContext):
-    if message.text == "⬅️ Назад":
-        await delete_dialog_message(state)
-        await state.finish()
-        await export_menu(message)
-        return
-    url = message.text.strip()
-    if not is_valid_url(url):
-        await send_temp_message(message.chat.id, "❌ Это не похоже на ссылку. Пожалуйста, отправь корректный URL (начинающийся с http:// или https://).", 4)
-        await edit_or_send(state, message.chat.id, "📎 Отправь ссылку на трек или плейлист:", get_back_button(), edit=True)
-        return
-    await state.update_data(url=url)
-    await ExportStates.format.set()
-    await edit_or_send(state, message.chat.id, "Выбери формат:", get_download_formats_keyboard(), edit=True)
-
 @dp.message_handler(state=ExportStates.format)
 async def export_any_format(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
@@ -1025,40 +1009,63 @@ async def export_any_format(message: types.Message, state: FSMContext):
     await state.finish()
     progress_msg = await message.answer("⏳ Скачиваю... [░░░░░░░░░░] 0%")
     try:
+        # Анимация прогресса
         for i in range(1, 6):
             await asyncio.sleep(1)
             bar = "█" * i + "░" * (5 - i)
             await bot.edit_message_text(f"⏳ Скачиваю... [{bar}] {i*20}%", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
+
+        # Определяем, является ли ссылка YouTube
+        is_youtube = 'youtube.com' in url or 'youtu.be' in url
+
+        # Общие настройки
+        opts = {
+            'outtmpl': '%(title)s.%(ext)s',
+        }
+
+        # Дополнительные параметры для YouTube (обход блокировки)
+        if is_youtube:
+            opts.update({
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android'],
+                        'skip': ['webpage']
+                    }
+                },
+                'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                'sleep_interval': 5,  # пауза между запросами
+                'sleep_requests': 5,
+            })
+        else:
+            # Стандартный user-agent для других сервисов
+            opts['user_agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+        # Настройки формата
         if fmt == "MP3 (аудио)":
-            opts = {
+            opts.update({
                 'format': 'bestaudio/best',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
                     'preferredquality': '192',
                 }],
-                'outtmpl': '%(title)s.%(ext)s',
-            }
+            })
         elif fmt == "WAV (аудио)":
-            opts = {
+            opts.update({
                 'format': 'bestaudio/best',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'wav',
                 }],
-                'outtmpl': '%(title)s.%(ext)s',
-            }
+            })
         elif fmt == "MP4 (видео)":
-            opts = {
+            opts.update({
                 'format': 'bestvideo+bestaudio/best',
                 'merge_output_format': 'mp4',
-                'outtmpl': '%(title)s.%(ext)s',
-            }
-        else:
-            opts = {
-                'format': 'best',
-                'outtmpl': '%(title)s.%(ext)s',
-            }
+            })
+        else:  # Лучшее качество (оригинал)
+            opts['format'] = 'best'
+
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
@@ -1066,6 +1073,7 @@ async def export_any_format(message: types.Message, state: FSMContext):
                 filename = filename.rsplit('.', 1)[0] + '.mp3'
             elif fmt == "WAV (аудио)":
                 filename = filename.rsplit('.', 1)[0] + '.wav'
+
         await bot.edit_message_text("✅ Скачивание завершено! Отправляю файл...", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
         with open(filename, 'rb') as f:
             await message.answer_document(f, caption=f"🎵 {info.get('title', 'файл')}")
@@ -1073,11 +1081,20 @@ async def export_any_format(message: types.Message, state: FSMContext):
         await progress_msg.delete()
     except Exception as e:
         logging.error(f"Ошибка загрузки: {e}")
-        await bot.edit_message_text(f"❌ Ошибка: {e}\nПроверь ссылку и попробуй снова.", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
+        error_msg = str(e)
+        if "Sign in to confirm you’re not a bot" in error_msg:
+            await bot.edit_message_text(
+                "❌ YouTube временно блокирует запросы. Попробуйте:\n"
+                "• Подождать 10–15 минут\n"
+                "• Использовать другой источник (SoundCloud, VK)\n"
+                "• Скачать позже, когда нагрузка снизится",
+                chat_id=progress_msg.chat.id, message_id=progress_msg.message_id
+            )
+        else:
+            await bot.edit_message_text(f"❌ Ошибка: {error_msg[:200]}\nПроверь ссылку и попробуй снова.", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
         await asyncio.sleep(3)
         await progress_msg.delete()
     await message.answer("Главное меню", reply_markup=get_main_menu())
-
 # ========== КОНВЕРТЕР ==========
 @dp.message_handler(text="🔄 Конвертер")
 async def converter_menu(message: types.Message, state: FSMContext):
@@ -1168,7 +1185,7 @@ async def converter_format(message: types.Message, state: FSMContext):
     finally:
         if os.path.exists(input_path):
             os.remove(input_path)
-    await message.answer("Главное меню", reply_markup=get_main_menu())
+    await message.answer("Главное меню", 
 
 # ========== НАСТРОЙКИ ==========
 @dp.message_handler(text="⚙️ Настройки")
