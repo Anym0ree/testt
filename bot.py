@@ -611,10 +611,6 @@ async def reminder_edit_text_start(callback: types.CallbackQuery, state: FSMCont
 
 @dp.message_handler(state=ReminderStates.edit_text)
 async def reminder_update_text(message: types.Message, state: FSMContext):
-    if message.text == "⬅️ Назад":
-        await safe_finish(state, message)
-        await list_reminders(message)
-        return
     data = await state.get_data()
     reminder_id = data.get("edit_reminder_id")
     if reminder_id:
@@ -625,7 +621,6 @@ async def reminder_update_text(message: types.Message, state: FSMContext):
         await list_reminders(message)
     else:
         await safe_finish(state, message, "Ошибка: напоминание не найдено")
-
 @dp.callback_query_handler(lambda c: c.data == "reminder_edit_time")
 async def reminder_edit_time_start(callback: types.CallbackQuery, state: FSMContext):
     await ReminderStates.edit_date.set()
