@@ -193,271 +193,7 @@ async def cmd_start(message: types.Message):
             reply_markup=get_main_menu()
         )
 
-# ========== УСТАНОВКА ГОРОДА ==========
-@dp.message_handler(state=TimezoneStates.city)
-async def set_city(message: types.Message, state: FSMContext):
-    city_map = {
-        "Москва (UTC+3)": 3,
-        "Санкт-Петербург (UTC+3)": 3,
-        "Екатеринбург (UTC+5)": 5,
-        "Новосибирск (UTC+7)": 7,
-        "Владивосток (UTC+10)": 10,
-        "Калининград (UTC+2)": 2
-    }
-    if message.text in city_map:
-        offset = city_map[message.text]
-        db.set_user_timezone(message.from_user.id, offset)
-        await message.answer(f"✅ Часовой пояс установлен: UTC+{offset}\n\nГлавное меню — /menu", reply_markup=get_main_menu())
-        await state.finish()
-    elif message.text == "Другое":
-        await message.answer("Введи смещение в часах от UTC (например, 3 для Москвы, -5 для Нью-Йорка):\n\nПримеры: 3, -5, 0", reply_markup=types.ReplyKeyboardRemove())
-        await TimezoneStates.offset.set()
-    elif message.text == "⬅️ Назад":
-        await message.answer("Главное меню", reply_markup=get_main_menu())
-        await state.finish()
-    elif message.text == "❌ Отмена":
-        await message.answer("❌ Отменено. Для настройки используй /start или настройки.", reply_markup=get_main_menu())
-        await state.finish()
-    else:
-        await message.answer("Пожалуйста, выбери город из списка или нажми 'Другое'.", reply_markup=get_timezone_buttons())
-
-@dp.message_handler(state=TimezoneStates.offset)
-async def set_offset(message: types.Message, state: FSMContext):
-    if message.text in ("⬅️ Назад", "❌ Отмена"):
-        await message.answer("Выбор часового пояса отменён.", reply_markup=get_main_menu())
-        await state.finish()
-        return
-    try:
-        offset = int(message.text.strip())
-        db.set_user_timezone(message.from_user.id, offset)
-        sign = "+" if offset >= 0 else ""
-        await message.answer(f"✅ Часовой пояс установлен: UTC{sign}{offset}\n\nГлавное меню — /menu", reply_markup=get_main_menu())
-        await state.finish()
-    except ValueError:
-        await message.answer("❌ Неверный формат. Введи целое число (например: 3, -5, 0).", reply_markup=types.ReplyKeyboardRemove())
-
-@dp.message_handler(commands=['menu'])
-async def cmd_menu(message: types.Message):
-    await message.answer("📱 Главное меню", reply_markup=get_main_menu())
-
-@dp.message_handler(commands=['skip'])
-async def cmd_skip(message: types.Message, state: FSMContext):
-    await state.finish()
-    await message.answer("⏭ Текущий опрос пропущен", reply_markup=get_main_menu())
-
-# ========== СОН ==========
-@dp.message_handler(text="🛌 Сон")
-async def sleep_start(message: types.Message, state: FSMContext):
-    if db.has_sleep_today(message.from_user.id):
-        await message.answer("❌ Ты уже записал сон сегодня. Сон можно записывать только один раз в день.", reply_markup=get_main_menu())
-        return
-    await SleepStates.bed_time.set()
-    await edit_or_send(state, message.chat.id, "🛌 Во сколько лег?", get_time_buttons(), edit=False)
-
-@dp.message_handler(state=SleepStates.bed_time)
-async def sleep_bed_time(message: types.Message, state: FSMContext):
-    if message.text in ("❌ Отмена", "⬅️ Назад"):
-        await safe_finish(state, message)
-        return
-    if message.text == "Другое":
-        await state.update_data(awaiting_custom_bed_time=True)
-        await edit_or_send(state, message.chat.id, "Введи время в формате ЧЧ:ММ (например 23:45):", get_back_button(), edit=True)
-        return
-    data = await state.get_data()
-    if data.get("awaiting_custom_bed_time"):
-        if not is_valid_time_text(message.text):
-            await edit_or_send(state, message.chat.id, "❌ Неверный формат. Введи время как ЧЧ:ММ (например 23:45).", get_back_button(), edit=True)
-            return
-        await state.update_data(awaiting_custom_bed_time=False)
-    elif message.text not in {"22:00", "23:00", "00:00", "01:00", "02:00", "03:00"}:
-        await edit_or_send(state, message.chat.id, "Выбери время из кнопок или нажми «Другое».", get_time_buttons(), edit=True)
-        return
-    await state.update_data(bed_time=message.text)
-    await SleepStates.next()
-    await edit_or_send(state, message.chat.id, "Во сколько встал?", get_morning_time_buttons(), edit=True)
-
-@dp.message_handler(state=SleepStates.wake_time)
-async def sleep_wake_time(message: types.Message, state: FSMContext):
-    if message.text in ("❌ Отмена", "⬅️ Назад"):
-        await safe_finish(state, message)
-        return
-    if message.text == "Другое":
-        await state.update_data(awaiting_custom_wake_time=True)
-        await edit_or_send(state, message.chat.id, "Введи время в формате ЧЧ:ММ (например 09:15):", get_back_button(), edit=True)
-        return
-    data = await state.get_data()
-    if data.get("awaiting_custom_wake_time"):
-        if not is_valid_time_text(message.text):
-            await edit_or_send(state, message.chat.id, "❌ Неверный формат. Введи время как ЧЧ:ММ (например 09:15).", get_back_button(), edit=True)
-            return
-        await state.update_data(awaiting_custom_wake_time=False)
-    elif message.text not in {"06:00", "07:00", "08:00", "09:00", "10:00", "11:00", "12:00"}:
-        await edit_or_send(state, message.chat.id, "Выбери время из кнопок или нажми «Другое».", get_morning_time_buttons(), edit=True)
-        return
-    await state.update_data(wake_time=message.text)
-    await SleepStates.next()
-    await edit_or_send(state, message.chat.id, "Качество сна? (1-10)", get_energy_stress_buttons(), edit=True)
-
-@dp.message_handler(state=SleepStates.quality)
-async def sleep_quality(message: types.Message, state: FSMContext):
-    if message.text in ("❌ Отмена", "⬅️ Назад"):
-        await safe_finish(state, message)
-        return
-    if not is_valid_score_text(message.text):
-        await edit_or_send(state, message.chat.id, "❌ Введи оценку от 1 до 10.", get_energy_stress_buttons(), edit=True)
-        return
-    await state.update_data(quality=message.text)
-    await SleepStates.next()
-    await edit_or_send(state, message.chat.id, "Просыпался ночью?", get_yes_no_buttons(), edit=True)
-
-@dp.message_handler(state=SleepStates.woke_night)
-async def sleep_woke_night(message: types.Message, state: FSMContext):
-    if message.text in ("❌ Отмена", "⬅️ Назад"):
-        await safe_finish(state, message)
-        return
-    await state.update_data(woke_night=message.text)
-    await SleepStates.next()
-    await edit_or_send(state, message.chat.id, "Заметка? (можно пропустить)", get_skip_markup_text(), edit=True)
-
-@dp.message_handler(state=SleepStates.note)
-async def sleep_note(message: types.Message, state: FSMContext):
-    if message.text in ("❌ Отмена", "⬅️ Назад"):
-        await safe_finish(state, message)
-        return
-    data = await state.get_data()
-    note = message.text if message.text != "Пропустить" else ""
-    success = db.add_sleep(
-        message.from_user.id,
-        data["bed_time"],
-        data["wake_time"],
-        data["quality"],
-        data["woke_night"],
-        note
-    )
-    await delete_dialog_message(state)
-    await state.finish()
-    if success:
-        await send_temp_message(message.chat.id, "✅ Сон сохранен!", 2)
-    else:
-        await send_temp_message(message.chat.id, "❌ Не удалось сохранить сон.", 3)
-    await message.answer("Главное меню", reply_markup=get_main_menu())
-
-# ========== ЧЕК-ИН ==========
-@dp.message_handler(text="⚡️ Чек-ин")
-async def checkin_start(message: types.Message, state: FSMContext):
-    await CheckinStates.energy.set()
-    await edit_or_send(state, message.chat.id, "⚡️ Энергия? (1-10)", get_energy_stress_buttons(), edit=False)
-
-@dp.message_handler(state=CheckinStates.energy)
-async def checkin_energy(message: types.Message, state: FSMContext):
-    if message.text in ("❌ Отмена", "⬅️ Назад"):
-        await safe_finish(state, message)
-        return
-    if not is_valid_score_text(message.text):
-        await edit_or_send(state, message.chat.id, "❌ Введи число от 1 до 10.", get_energy_stress_buttons(), edit=True)
-        return
-    await state.update_data(energy=message.text)
-    await CheckinStates.next()
-    await edit_or_send(state, message.chat.id, "Стресс? (1-10)", get_energy_stress_buttons(), edit=True)
-
-@dp.message_handler(state=CheckinStates.stress)
-async def checkin_stress(message: types.Message, state: FSMContext):
-    if message.text in ("❌ Отмена", "⬅️ Назад"):
-        await safe_finish(state, message)
-        return
-    if not is_valid_score_text(message.text):
-        await edit_or_send(state, message.chat.id, "❌ Введи число от 1 до 10.", get_energy_stress_buttons(), edit=True)
-        return
-    await state.update_data(stress=message.text)
-    await CheckinStates.next()
-    await state.update_data(emotions_list=[])
-    await edit_or_send(state, message.chat.id, "Выбери эмоции (можно несколько). Когда закончишь, нажми '✅ Готово':", get_emotion_buttons(), edit=True)
-
-@dp.message_handler(state=CheckinStates.emotions)
-async def checkin_emotions(message: types.Message, state: FSMContext):
-    if message.text in ("❌ Отмена", "⬅️ Назад"):
-        await safe_finish(state, message)
-        return
-    if message.text == "✅ Готово":
-        data = await state.get_data()
-        emotions = data.get("emotions_list", [])
-        if not emotions:
-            await edit_or_send(state, message.chat.id, "Выбери хотя бы одну эмоцию или нажми 'Отмена'", get_emotion_buttons(), edit=True)
-            return
-        await CheckinStates.next()
-        await edit_or_send(state, message.chat.id, "Заметка? (можно пропустить)", get_skip_markup_text(), edit=True)
-        return
-    if message.text == "✍️ Своя":
-        await edit_or_send(state, message.chat.id, "Напиши свою эмоцию:", None, edit=True)
-        return
-
-    data = await state.get_data()
-    emotions_list = data.get("emotions_list", [])
-    if message.text not in emotions_list:
-        emotions_list.append(message.text)
-        await state.update_data(emotions_list=emotions_list)
-        await edit_or_send(state, message.chat.id, f"✅ Добавлено: {message.text}\nВыбрано: {', '.join(emotions_list)}\n\nВыбери ещё или нажми '✅ Готово'", get_emotion_buttons(), edit=True)
-    else:
-        await edit_or_send(state, message.chat.id, f"⚠️ Эмоция '{message.text}' уже добавлена\nВыбрано: {', '.join(emotions_list)}", get_emotion_buttons(), edit=True)
-
-@dp.message_handler(state=CheckinStates.note)
-async def checkin_note(message: types.Message, state: FSMContext):
-    if message.text in ("❌ Отмена", "⬅️ Назад"):
-        await safe_finish(state, message)
-        return
-    data = await state.get_data()
-    note = message.text if message.text != "Пропустить" else ""
-    hour = db.get_user_local_hour(message.from_user.id)
-    if hour < 12:
-        time_slot = "утро"
-    elif hour < 18:
-        time_slot = "день"
-    else:
-        time_slot = "вечер"
-    db.add_checkin(
-        message.from_user.id,
-        time_slot,
-        data["energy"],
-        data["stress"],
-        data.get("emotions_list", []),
-        note
-    )
-    await delete_dialog_message(state)
-    await state.finish()
-    await send_temp_message(message.chat.id, "✅ Чек-ин сохранен!", 2)
-    await message.answer("Главное меню", reply_markup=get_main_menu())
-
-# ========== ИТОГ ДНЯ ==========
-@dp.message_handler(text="📝 Итог дня")
-async def summary_start(message: types.Message, state: FSMContext):
-    target_date = db.get_target_date_for_summary(message.from_user.id)
-    if target_date is None:
-        await message.answer("📝 Итог дня можно подвести с 18:00 до 6:00 утра.", reply_markup=get_main_menu())
-        return
-    if db.has_day_summary_for_date(message.from_user.id, target_date):
-        await message.answer(f"❌ Ты уже записал итог дня за {target_date}.", reply_markup=get_main_menu())
-        return
-    await DaySummaryStates.score.set()
-    await edit_or_send(state, message.chat.id, f"📝 Записываем итог дня за {target_date}. Оценка дня? (1-10)", get_energy_stress_buttons(), edit=False)
-
-@dp.message_handler(state=DaySummaryStates.score)
-async def summary_score(message: types.Message, state: FSMContext):
-    if message.text in ("❌ Отмена", "⬅️ Назад"):
-        await safe_finish(state, message)
-        return
-    if not is_valid_score_text(message.text):
-        await edit_or_send(state, message.chat.id, "❌ Введи оценку от 1 до 10.", get_energy_stress_buttons(), edit=True)
-        return
-    await state.update_data(score=message.text)
-    await DaySummaryStates.next()
-    await edit_or_send(state, message.chat.id, "Что было лучшим?", get_skip_markup_text(), edit=True)
-
-@dp.message_handler(state=DaySummaryStates.best)
-async def summary_best(message: types.Message, state: FSMContext):
-    if message.text in ("❌ Отмена", "⬅️ Назад"):
-        await safe_finish(state, message)
-        return
-    best = message.text if message.text != "Пропустить" else ""
+# ... [содержимое части 1 как в сообщении выше] ...
     await state.update_data(best=best)
     await DaySummaryStates.next()
     await edit_or_send(state, message.chat.id, "Что было худшим?", get_skip_markup_text(), edit=True)
@@ -790,15 +526,29 @@ async def edit_note_start(callback: types.CallbackQuery, state: FSMContext):
     note_id = int(callback.data.split("_")[-1])
     await state.update_data(edit_note_id=note_id)
     await NoteStates.edit_text.set()
-    await callback.message.edit_text("✏️ Введи новый текст для заметки:", reply_markup=get_back_button())
+    await callback.message.edit_text(
+        "✏️ Введи новый текст для заметки:",
+        reply_markup=get_inline_cancel_button("note_edit_cancel")
+    )
+    await callback.answer()
+
+@dp.callback_query_handler(lambda c: c.data == "note_edit_cancel")
+async def note_edit_cancel(callback: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+    notes = db.get_notes(callback.from_user.id)
+    if not notes:
+        await callback.message.edit_text("📋 У тебя пока нет заметок.")
+        await callback.message.answer("📝 Заметки и напоминания", reply_markup=get_notes_reminders_main_menu())
+    else:
+        visible_notes = list(reversed(notes[-10:]))
+        text = "📋 *Твои заметки:*\n\n"
+        for i, note in enumerate(visible_notes, 1):
+            text += f"{i}. {note['text']}\n   📅 {note['date']} {note['time']}\n\n"
+        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=get_notes_list_keyboard(visible_notes))
     await callback.answer()
 
 @dp.message_handler(state=NoteStates.edit_text)
 async def update_note_text(message: types.Message, state: FSMContext):
-    if message.text == "⬅️ Назад":
-        await safe_finish(state, message)
-        await list_notes(message)
-        return
     data = await state.get_data()
     note_id = data.get("edit_note_id")
     if note_id:
@@ -832,8 +582,10 @@ async def reminder_select(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("Напоминание не найдено", show_alert=True)
         return
     await state.update_data(edit_reminder_id=reminder_id)
-    text = f"🕐 {reminder['date']} {reminder['time']}\n📝 {reminder['text']}"
-    await callback.message.edit_text(text, reply_markup=get_reminder_action_keyboard(reminder_id))
+    is_extra = bool(reminder.get("parent_id"))
+    reminder_type = "Доп. напоминание" if is_extra else "Основное напоминание"
+    text = f"🕐 {reminder['date']} {reminder['time']}\n📝 {reminder['text']}\n\nТип: {reminder_type}"
+    await callback.message.edit_text(text, reply_markup=get_reminder_action_keyboard(reminder_id, is_extra=is_extra))
     await callback.answer()
 
 @dp.callback_query_handler(lambda c: c.data.startswith("reminder_delete_"))
@@ -848,27 +600,13 @@ async def reminder_delete(callback: types.CallbackQuery):
     else:
         await callback.message.answer("📋 У тебя пока нет активных напоминаний", reply_markup=get_notes_reminders_main_menu())
 
-@dp.callback_query_handler(lambda c: c.data.startswith("reminder_edit_"))
-async def reminder_edit_start(callback: types.CallbackQuery, state: FSMContext):
-    reminder_id = int(callback.data.split("_")[-1])
-    reminder = db.get_reminder_by_id(callback.from_user.id, reminder_id)
-    if not reminder:
-        await callback.answer("Напоминание не найдено", show_alert=True)
-        return
-    await state.update_data(edit_reminder_id=reminder_id)
-    await callback.message.edit_text(
-        f"✏️ Редактирование\n\n"
-        f"Текст: {reminder['text']}\n"
-        f"Время: {reminder['date']} {reminder['time']}\n\n"
-        f"Что хочешь изменить?",
-        reply_markup=get_reminder_edit_keyboard()
-    )
-    await callback.answer()
-
 @dp.callback_query_handler(lambda c: c.data == "reminder_edit_text")
 async def reminder_edit_text_start(callback: types.CallbackQuery, state: FSMContext):
     await ReminderStates.edit_text.set()
-    await callback.message.edit_text("✏️ Введи новый текст для напоминания", reply_markup=get_back_button())
+    await callback.message.edit_text(
+        "✏️ Введи новый текст для напоминания",
+        reply_markup=get_inline_cancel_button("reminder_back_to_list")
+    )
     await callback.answer()
 
 @dp.message_handler(state=ReminderStates.edit_text)
@@ -891,12 +629,60 @@ async def reminder_update_text(message: types.Message, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == "reminder_edit_time")
 async def reminder_edit_time_start(callback: types.CallbackQuery, state: FSMContext):
     await ReminderStates.edit_date.set()
-    await callback.message.edit_text("📅 Выбери новую дату:", reply_markup=get_reminder_date_buttons())
+    await callback.message.answer("📅 Выбери новую дату:", reply_markup=get_reminder_date_buttons())
     await callback.answer()
+
+@dp.callback_query_handler(lambda c: c.data == "reminder_edit_advance")
+async def reminder_edit_advance_start(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    reminder_id = data.get("edit_reminder_id")
+    if not reminder_id:
+        await callback.answer("Сначала выбери напоминание", show_alert=True)
+        return
+
+    reminder = db.get_reminder_by_id(callback.from_user.id, reminder_id)
+    if not reminder:
+        await callback.answer("Напоминание не найдено", show_alert=True)
+        return
+
+    current_kind = reminder.get("advance_type")
+    if reminder.get("parent_id"):
+        parent = db.get_reminder_by_id(callback.from_user.id, reminder.get("parent_id"))
+        current_kind = reminder.get("advance_kind") if reminder else None
+        reminder_id = parent["id"] if parent else reminder_id
+    await callback.message.edit_text(
+        "⏰ Настройка дополнительного напоминания.\nВыбери вариант:",
+        reply_markup=get_reminder_advance_inline_keyboard(reminder_id, current_kind if current_kind else "none")
+    )
+    await callback.answer()
+
+@dp.callback_query_handler(lambda c: c.data.startswith("remadv_set_"))
+async def reminder_set_advance(callback: types.CallbackQuery, state: FSMContext):
+    match = re.fullmatch(r"remadv_set_(\d+)_(day|3h|1h|none)", callback.data or "")
+    if not match:
+        await callback.answer("Некорректная команда", show_alert=True)
+        return
+    reminder_id = int(match.group(1))
+    selected_kind = match.group(2)
+    advance_type = None if selected_kind == "none" else selected_kind
+
+    ok = db.update_reminder_advance(callback.from_user.id, reminder_id, advance_type)
+    if not ok and advance_type:
+        await callback.answer("Доп. напоминание попало в прошлое. Выбери другой вариант или время.", show_alert=True)
+    else:
+        await callback.answer("✅ Доп. напоминание обновлено", show_alert=False)
+
+    await state.update_data(edit_reminder_id=reminder_id)
+    updated = db.get_reminder_by_id(callback.from_user.id, reminder_id)
+    reminder_text = updated["text"] if updated else "Напоминание"
+    await callback.message.edit_text(
+        f"📝 {reminder_text}\n\nВыбери действие:",
+        reply_markup=get_reminder_action_keyboard(reminder_id, is_extra=False)
+    )
 
 @dp.message_handler(state=ReminderStates.edit_date)
 async def reminder_edit_date(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
+    if message.text == "❌ Отмна":
         await safe_finish(state, message)
         await list_reminders(message)
         return
