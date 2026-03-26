@@ -193,8 +193,6 @@ async def cmd_start(message: types.Message):
             reply_markup=get_main_menu()
         )
 
-True)
-
 @dp.message_handler(state=DaySummaryStates.worst)
 async def summary_worst(message: types.Message, state: FSMContext):
     if message.text in ("❌ Отмена", "⬅️ Назад"):
@@ -1063,6 +1061,7 @@ async def reset_cancel(callback_query: types.CallbackQuery):
 
 # ========== УВЕДОМЛЕНИЯ ==========
 scheduler = None
+web_task = None
 
 async def check_reminders():
     due_reminders = db.get_reminders_due_now()
@@ -1076,16 +1075,23 @@ async def check_reminders():
             logging.error(f"Ошибка отправки напоминания {reminder['id']}: {e}")
 
 # ========== ЗАПУСК ==========
-from web import start_web
+from web import start_web, stop_web
 
 async def on_startup(dp):
-    global scheduler
+    global scheduler, web_task
     await bot.delete_webhook(drop_pending_updates=True)
-    start_web()
+    web_task = start_web()
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
     scheduler.start()
     print("🤖 Бот запущен и планировщик уведомлений активен!")
 
+async def on_shutdown(dp):
+    global scheduler, web_task
+    if scheduler and scheduler.running:
+        scheduler.shutdown(wait=False)
+    await stop_web(web_task)
+    web_task = None
+
 if __name__ == "__main__":
-    executor.start_polling(dp, on_startup=on_startup)
+    executor.start_polling(dp, on_startup=on_startup, on_shutdown=on_shutdown)
