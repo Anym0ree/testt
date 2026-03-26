@@ -193,8 +193,6 @@ async def cmd_start(message: types.Message):
             reply_markup=get_main_menu()
         )
 
-True)
-
 @dp.message_handler(state=DaySummaryStates.worst)
 async def summary_worst(message: types.Message, state: FSMContext):
     if message.text in ("❌ Отмена", "⬅️ Назад"):
