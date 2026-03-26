@@ -354,48 +354,49 @@ class Database:
         self._save_json(user_id, "reminders.json", reminders)
         return True
 
-    def update_reminder_advance(self, user_id, reminder_id, advance_type):
-        reminders = self._load_json(user_id, "reminders.json")
-        parent_id = self.get_parent_reminder_id(reminders, reminder_id)
-        if not parent_id:
-            return False
+def update_reminder_advance(self, user_id, reminder_id, advance_type):
+    reminders = self._load_json(user_id, "reminders.json")
+    parent_id = self.get_parent_reminder_id(reminders, reminder_id)
+    if not parent_id:
+        return False
 
-        parent = next((r for r in reminders if r.get("id") == parent_id), None)
-        if not parent:
-            return False
+    parent = next((r for r in reminders if r.get("id") == parent_id), None)
+    if not parent:
+        return False
 
+    if not advance_type:
         children = [r for r in reminders if r.get("parent_id") == parent_id and r.get("is_active", True)]
         for child in children:
             child["is_active"] = False
-
-        if not advance_type:
-            parent["advance_type"] = None
-            self._save_json(user_id, "reminders.json", reminders)
-            return True
-
-        adv_dt = self._get_advance_datetime(parent["date"], parent["time"], advance_type)
-        local_dt = self.get_user_local_datetime(user_id)
-        if adv_dt < local_dt:
-            self._save_json(user_id, "reminders.json", reminders)
-            return False
-
-        parent["advance_type"] = advance_type
-        next_id = max([r.get("id", 0) for r in reminders], default=0) + 1
-        prefix = "⚠️ ЗА ДЕНЬ" if advance_type == "day" else "⚠️ ЗА 3 ЧАСА" if advance_type == "3h" else "⚠️ ЗА 1 ЧАС"
-        reminders.append({
-            "id": next_id,
-            "text": f"{prefix}: {parent['text']}",
-            "date": adv_dt.strftime("%Y-%m-%d"),
-            "time": adv_dt.strftime("%H:%M"),
-            "advance_type": None,
-            "advance_kind": advance_type,
-            "is_active": True,
-            "parent_id": parent_id,
-            "created_at": datetime.utcnow().isoformat()
-        })
+        parent["advance_type"] = None
         self._save_json(user_id, "reminders.json", reminders)
         return True
 
+    adv_dt = self._get_advance_datetime(parent["date"], parent["time"], advance_type)
+    local_dt = self.get_user_local_datetime(user_id)
+    if adv_dt < local_dt:
+        return False
+
+    children = [r for r in reminders if r.get("parent_id") == parent_id and r.get("is_active", True)]
+    for child in children:
+        child["is_active"] = False
+
+    parent["advance_type"] = advance_type
+    next_id = max([r.get("id", 0) for r in reminders], default=0) + 1
+    prefix = "⚠️ ЗА ДЕНЬ" if advance_type == "day" else "⚠️ ЗА 3 ЧАСА" if advance_type == "3h" else "⚠️ ЗА 1 ЧАС"
+    reminders.append({
+        "id": next_id,
+        "text": f"{prefix}: {parent['text']}",
+        "date": adv_dt.strftime("%Y-%m-%d"),
+        "time": adv_dt.strftime("%H:%M"),
+        "advance_type": None,
+        "advance_kind": advance_type,
+        "is_active": True,
+        "parent_id": parent_id,
+        "created_at": datetime.utcnow().isoformat()
+    })
+    self._save_json(user_id, "reminders.json", reminders)
+    return True
     def get_reminder_by_id(self, user_id, reminder_id):
         reminders = self._load_json(user_id, "reminders.json")
         for r in reminders:
