@@ -193,10 +193,7 @@ async def cmd_start(message: types.Message):
             reply_markup=get_main_menu()
         )
 
-# ... [содержимое части 1 как в сообщении выше] ...
-    await state.update_data(best=best)
-    await DaySummaryStates.next()
-    await edit_or_send(state, message.chat.id, "Что было худшим?", get_skip_markup_text(), edit=True)
+True)
 
 @dp.message_handler(state=DaySummaryStates.worst)
 async def summary_worst(message: types.Message, state: FSMContext):
