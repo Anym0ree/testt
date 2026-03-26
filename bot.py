@@ -9,7 +9,6 @@ import yt_dlp
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.utils import executor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -17,72 +16,16 @@ from apscheduler.triggers.interval import IntervalTrigger
 from config import BOT_TOKEN
 from database import db
 from keyboards import *
+from states import (
+    SleepStates, CheckinStates, DaySummaryStates, FoodStates, DrinkStates,
+    FoodDrinkStates, TimezoneStates, NoteStates, ReminderStates, ExportStates, ConverterStates
+)
 
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
-
-# ========== СОСТОЯНИЯ ==========
-class SleepStates(StatesGroup):
-    bed_time = State()
-    wake_time = State()
-    quality = State()
-    woke_night = State()
-    note = State()
-
-class CheckinStates(StatesGroup):
-    energy = State()
-    stress = State()
-    emotions = State()
-    note = State()
-
-class DaySummaryStates(StatesGroup):
-    score = State()
-    best = State()
-    worst = State()
-    gratitude = State()
-    note = State()
-
-class FoodStates(StatesGroup):
-    meal_type = State()
-    food_text = State()
-
-class DrinkStates(StatesGroup):
-    drink_type = State()
-    amount = State()
-
-class FoodDrinkStates(StatesGroup):
-    type = State()
-
-class TimezoneStates(StatesGroup):
-    city = State()
-    offset = State()
-
-class NoteStates(StatesGroup):
-    text = State()
-    edit_text = State()
-
-class ReminderStates(StatesGroup):
-    text = State()
-    date = State()
-    hour = State()
-    minute = State()
-    advance = State()
-    edit_text = State()
-    edit_date = State()
-    edit_hour = State()
-    edit_minute = State()
-    edit_reminder_id = State()
-
-class ExportStates(StatesGroup):
-    url = State()
-    format = State()
-
-class ConverterStates(StatesGroup):
-    file = State()
-    format = State()
 
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 async def edit_or_send(state: FSMContext, user_id, text, keyboard=None, edit=True):
@@ -1290,7 +1233,7 @@ async def converter_format(message: types.Message, state: FSMContext):
         safe_remove_file(output_path)
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
-# ========== НАСТРОЙКИ ==========
+# ========== НАТРОЙКИ ==========
 @dp.message_handler(text="⚙️ Настройки")
 async def settings(message: types.Message):
     await message.answer(
