@@ -30,7 +30,7 @@ async def run_web():
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
     _is_ready = True
-    logging.info(f"Web server started on port {port}")
+    logging.info("Web server started on port %s", port)
     try:
         await asyncio.Event().wait()
     finally:
