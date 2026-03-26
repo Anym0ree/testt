@@ -39,4 +39,14 @@ async def run_web():
 
 def start_web():
     loop = asyncio.get_running_loop()
-    loop.create_task(run_web())
+        return loop.create_task(run_web())
+
+
+async def stop_web(web_task):
+    if not web_task:
+        return
+    web_task.cancel()
+    try:
+        await web_task
+    except asyncio.CancelledError:
+        pass
