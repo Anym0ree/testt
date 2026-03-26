@@ -37,6 +37,7 @@ async def run_web():
         _is_ready = False
         await runner.cleanup()
 
+
 def start_web():
     loop = asyncio.get_running_loop()
     return loop.create_task(run_web(), name="embedded-web-server")
