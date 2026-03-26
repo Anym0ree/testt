@@ -1083,6 +1083,7 @@ from web import start_web
 
 async def on_startup(dp):
     global scheduler
+    await bot.delete_webhook(drop_pending_updates=True)
     start_web()
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
