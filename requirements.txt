@@ -1,4 +1,4 @@
 aiogram==2.25.1
-aiohttp
-apscheduler
-yt-dlp
+aiohttp==3.8.6
+apscheduler==3.11.2
+yt-dlp==2026.3.17
