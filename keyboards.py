@@ -80,7 +80,7 @@ def get_reminder_action_keyboard(reminder_id, is_extra=False):
         [InlineKeyboardButton(text="🕐 Изменить время", callback_data="reminder_edit_time")],
     ]
     if not is_extra:
-        buttons.append([InlineKeyboardButton(text="⏰ Доп. напоминание", callback_data="reminder_edit_advance")])
+        buttons.append([InlineKeyboardButton(text=" Доп. напоминание", callback_data="reminder_edit_advance")])
     buttons.extend([
         [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"reminder_delete_{reminder_id}")],
         [InlineKeyboardButton(text="⬅️ К списку", callback_data="reminder_back_to_list")]
@@ -160,7 +160,7 @@ def get_yes_no_buttons():
 def get_meal_type_buttons():
     buttons = [
         [KeyboardButton(text="🍳 Завтрак"), KeyboardButton(text="🍱 Обед")],
-        [KeyboardButton(text="🍲 Ужин"), KeyboardButton(text="🍎 Перекус")],
+        [KeyboardButton(text=" Ужин"), KeyboardButton(text="🍎 Перекус")],
         [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
