@@ -39,11 +39,11 @@ async def run_web():
 
 def start_web():
     loop = asyncio.get_running_loop()
-        return loop.create_task(run_web())
+    return loop.create_task(run_web(), name="embedded-web-server")
 
 
 async def stop_web(web_task):
-    if not web_task:
+    if web_task is None:
         return
     web_task.cancel()
     try:
