@@ -166,7 +166,17 @@ async def download_media_with_ytdlp(url: str, fmt: str, progress_msg: types.Mess
     return await asyncio.to_thread(sync_download)
 
 # ========== КОМАНДЫ ==========
-@dp.message_handler(commands=['start'])
+CITY_TO_OFFSET = {
+    "Москва (UTC+3)": 3,
+    "Санкт-Петербург (UTC+3)": 3,
+    "Екатеринбург (UTC+5)": 5,
+    "Новосибирск (UTC+7)": 7,
+    "Владивосток (UTC+10)": 10,
+    "Калининград (UTC+2)": 2,
+}
+
+
+@dp.message_handler(commands=['start'], state='*')
 async def cmd_start(message: types.Message):
     if db.get_user_timezone(message.from_user.id) == 0:
         await message.answer(
@@ -192,6 +202,70 @@ async def cmd_start(message: types.Message):
             "Главное меню — /menu",
             reply_markup=get_main_menu()
         )
+
+@dp.message_handler(commands=['menu'], state='*')
+async def cmd_menu(message: types.Message, state: FSMContext):
+    await delete_dialog_message(state)
+    await state.finish()
+    await message.answer("Главное меню", reply_markup=get_main_menu())
+
+@dp.message_handler(state=TimezoneStates.city)
+async def timezone_city(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+
+    if message.text == "Другое":
+        await TimezoneStates.offset.set()
+        await edit_or_send(
+            state,
+            message.chat.id,
+            "Введи смещение от UTC (например: -5, 0, +3):",
+            get_back_button(),
+            edit=False
+        )
+        return
+
+    if message.text in CITY_TO_OFFSET:
+        db.set_user_timezone(message.from_user.id, CITY_TO_OFFSET[message.text])
+        await delete_dialog_message(state)
+        await state.finish()
+        await message.answer("✅ Часовой пояс сохранён.", reply_markup=get_main_menu())
+        return
+
+    await message.answer("Выбери город из кнопок или нажми «Другое».", reply_markup=get_timezone_buttons())
+
+
+@dp.message_handler(state=TimezoneStates.offset)
+async def timezone_offset(message: types.Message, state: FSMContext):
+    if message.text == "⬅️ Назад":
+        await TimezoneStates.city.set()
+        await edit_or_send(
+            state,
+            message.chat.id,
+            "Выбери свой город или нажми «Другое»:",
+            get_timezone_buttons(),
+            edit=True
+        )
+        return
+    if message.text == "❌ Отмена":
+        await safe_finish(state, message)
+        return
+
+    raw_value = message.text.strip().replace("UTC", "").replace("utc", "")
+    if not re.fullmatch(r"[+-]?\d{1,2}", raw_value):
+        await send_temp_message(message.chat.id, "❌ Введи число от -12 до +14 (например: -5, 0, +3).", 3)
+        return
+
+    offset = int(raw_value)
+    if offset < -12 or offset > 14:
+        await send_temp_message(message.chat.id, "❌ Смещение должно быть в диапазоне от -12 до +14.", 3)
+        return
+
+    db.set_user_timezone(message.from_user.id, offset)
+    await delete_dialog_message(state)
+    await state.finish()
+    await message.answer("✅ Часовой пояс сохранён.", reply_markup=get_main_menu())
 
 @dp.message_handler(state=DaySummaryStates.worst)
 async def summary_worst(message: types.Message, state: FSMContext):
