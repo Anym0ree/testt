@@ -36,6 +36,13 @@ class Database:
             return []
         return [int(folder) for folder in os.listdir(self.data_folder) if folder.isdigit()]
 
+    @staticmethod
+    def _as_int_id(value, default=0):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
     # === ЧАСОВОЙ ПОЯС ===
     def set_user_timezone(self, user_id, timezone_offset):
         user_folder = self._get_user_folder(user_id)
@@ -192,7 +199,7 @@ class Database:
     # === ЗАМЕТКИ ===
     def add_note(self, user_id, text):
         data = self._load_json(user_id, "notes.json")
-        note_id = max([n.get("id", 0) for n in data], default=0) + 1
+        note_id = max([self._as_int_id(n.get("id")) for n in data], default=0) + 1
         record = {
             "id": note_id,
             "text": text,
@@ -205,11 +212,15 @@ class Database:
         return note_id
 
     def get_notes(self, user_id):
-        return self._load_json(user_id, "notes.json")
+        notes = self._load_json(user_id, "notes.json")
+        for note in notes:
+            note["id"] = self._as_int_id(note.get("id"))
+        return notes
 
     def delete_note_by_id(self, user_id, note_id):
         notes = self._load_json(user_id, "notes.json")
-        new_notes = [n for n in notes if n.get("id") != note_id]
+        target_id = self._as_int_id(note_id, default=-1)
+        new_notes = [n for n in notes if self._as_int_id(n.get("id"), default=-1) != target_id]
         if len(new_notes) != len(notes):
             self._save_json(user_id, "notes.json", new_notes)
             return True
@@ -217,8 +228,9 @@ class Database:
 
     def update_note_text(self, user_id, note_id, new_text):
         notes = self._load_json(user_id, "notes.json")
+        target_id = self._as_int_id(note_id, default=-1)
         for note in notes:
-            if note.get("id") == note_id:
+            if self._as_int_id(note.get("id"), default=-1) == target_id:
                 note["text"] = new_text
                 self._save_json(user_id, "notes.json", notes)
                 return True

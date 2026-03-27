@@ -68,6 +68,12 @@ async def safe_delete_message_obj(message_obj):
     except Exception:
         pass
 
+async def safe_edit_from_callback(callback: types.CallbackQuery, text: str, **kwargs):
+    try:
+        await callback.message.edit_text(text, **kwargs)
+    except Exception:
+        await bot.send_message(callback.message.chat.id, text, **kwargs)
+
 def safe_remove_file(path):
     if path and isinstance(path, str) and os.path.exists(path):
         os.remove(path)
@@ -731,12 +737,12 @@ async def show_notes_list(chat_id: int, user_id: int):
         await bot.send_message(chat_id, "📋 У тебя пока нет заметок.", reply_markup=get_notes_reminders_main_menu())
         return
     visible_notes = list(reversed(notes[-10:]))
-    text = "📋 *Твои заметки:*\n\n"
+    text = "📋 Твои заметки:\n\n"
     for i, note in enumerate(visible_notes, 1):
         text += f"{i}. {note['text']}\n   📅 {note['date']} {note['time']}\n\n"
-    await bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=get_notes_list_keyboard(visible_notes))
+    await bot.send_message(chat_id, text, reply_markup=get_notes_list_keyboard(visible_notes))
 
-@dp.callback_query_handler(lambda c: c.data.startswith("note_select_"), state="*")
+@dp.callback_query_handler(lambda c: re.match(r"^note_select_\d+$", c.data or ""), state="*")
 async def note_select(callback: types.CallbackQuery):
     note_id = int(callback.data.split("_")[-1])
     notes = db.get_notes(callback.from_user.id)
@@ -745,57 +751,59 @@ async def note_select(callback: types.CallbackQuery):
         await callback.answer("Заметка не найдена", show_alert=True)
         return
     text = (
-        "📝 *Заметка*\n\n"
+        "📝 Заметка\n\n"
         f"{note['text']}\n\n"
         f"📅 {note['date']} {note['time']}"
     )
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=get_note_action_keyboard(note_id))
     await callback.answer()
+    await safe_edit_from_callback(callback, text, reply_markup=get_note_action_keyboard(note_id))
 
-@dp.callback_query_handler(lambda c: c.data.startswith("note_del_") and not c.data.startswith("note_del_confirm_"), state="*")
+@dp.callback_query_handler(lambda c: re.match(r"^note_del_\d+$", c.data or ""), state="*")
 async def delete_note_request(callback: types.CallbackQuery):
     note_id = int(callback.data.split("_")[-1])
-    await callback.message.edit_text(
+    await callback.answer()
+    await safe_edit_from_callback(
+        callback,
         "⚠️ Точно удалить заметку?",
         reply_markup=get_note_delete_confirm_keyboard(note_id)
     )
-    await callback.answer()
 
-@dp.callback_query_handler(lambda c: c.data.startswith("note_del_confirm_"), state="*")
+@dp.callback_query_handler(lambda c: re.match(r"^note_del_confirm_\d+$", c.data or ""), state="*")
 async def delete_note_confirm(callback: types.CallbackQuery):
     note_id = int(callback.data.split("_")[-1])
     if db.delete_note_by_id(callback.from_user.id, note_id):
         await callback.answer("✅ Заметка удалена", show_alert=False)
-        await callback.message.delete()
+        await safe_delete_message_obj(callback.message)
         await show_notes_list(callback.message.chat.id, callback.from_user.id)
     else:
         await callback.answer("Ошибка удаления", show_alert=True)
 
-@dp.callback_query_handler(lambda c: c.data.startswith("note_edit_"), state="*")
-async def edit_note_start(callback: types.CallbackQuery, state: FSMContext):
-    note_id = int(callback.data.split("_")[-1])
-    await state.update_data(edit_note_id=note_id)
-    await NoteStates.edit_text.set()
-    await callback.message.edit_text(
-        "✏️ Введи новый текст для заметки:",
-        reply_markup=get_inline_cancel_button("note_edit_cancel")
-    )
-    await callback.answer()
-
 @dp.callback_query_handler(lambda c: c.data == "note_edit_cancel", state="*")
 async def note_edit_cancel(callback: types.CallbackQuery, state: FSMContext):
     await state.finish()
+    await callback.answer()
     notes = db.get_notes(callback.from_user.id)
     if not notes:
-        await callback.message.edit_text("📋 У тебя пока нет заметок.")
+        await safe_edit_from_callback(callback, "📋 У тебя пока нет заметок.")
         await callback.message.answer("📝 Заметки и напоминания", reply_markup=get_notes_reminders_main_menu())
     else:
         visible_notes = list(reversed(notes[-10:]))
-        text = "📋 *Твои заметки:*\n\n"
+        text = "📋 Твои заметки:\n\n"
         for i, note in enumerate(visible_notes, 1):
             text += f"{i}. {note['text']}\n   📅 {note['date']} {note['time']}\n\n"
-        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=get_notes_list_keyboard(visible_notes))
+        await safe_edit_from_callback(callback, text, reply_markup=get_notes_list_keyboard(visible_notes))
+
+@dp.callback_query_handler(lambda c: re.match(r"^note_edit_\d+$", c.data or ""), state="*")
+async def edit_note_start(callback: types.CallbackQuery, state: FSMContext):
+    note_id = int(callback.data.split("_")[-1])
     await callback.answer()
+    await state.update_data(edit_note_id=note_id)
+    await NoteStates.edit_text.set()
+    await safe_edit_from_callback(
+        callback,
+        "✏️ Введи новый текст для заметки:",
+        reply_markup=get_inline_cancel_button("note_edit_cancel")
+    )
 
 @dp.message_handler(state=NoteStates.edit_text)
 async def update_note_text(message: types.Message, state: FSMContext):
