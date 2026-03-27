@@ -267,41 +267,196 @@ async def timezone_offset(message: types.Message, state: FSMContext):
     await state.finish()
     await message.answer("✅ Часовой пояс сохранён.", reply_markup=get_main_menu())
 
-@dp.message_handler(state=DaySummaryStates.worst)
-async def summary_worst(message: types.Message, state: FSMContext):
+@dp.message_handler(text="🛌 Сон")
+async def sleep_start(message: types.Message, state: FSMContext):
+    if db.has_sleep_today(message.from_user.id):
+        await send_temp_message(message.chat.id, "🛌 Сон за сегодня уже записан.", 3)
+        return
+    await SleepStates.bed_time.set()
+    await edit_or_send(state, message.chat.id, "Во сколько лёг спать?", get_time_buttons(), edit=False)
+
+@dp.message_handler(state=SleepStates.bed_time)
+async def sleep_bed_time(message: types.Message, state: FSMContext):
     if message.text in ("❌ Отмена", "⬅️ Назад"):
         await safe_finish(state, message)
         return
-    worst = message.text if message.text != "Пропустить" else ""
-    await state.update_data(worst=worst)
-    await DaySummaryStates.next()
-    await edit_or_send(state, message.chat.id, "За что благодарен?", get_skip_markup_text(), edit=True)
+    if message.text == "Другое":
+        await send_temp_message(message.chat.id, "Введи время в формате ЧЧ:ММ, например 23:45", 3)
+        return
+    if not is_valid_time_text(message.text):
+        await send_temp_message(message.chat.id, "❌ Укажи время в формате ЧЧ:ММ", 3)
+        return
+    await state.update_data(bed_time=message.text)
+    await SleepStates.wake_time.set()
+    await edit_or_send(state, message.chat.id, "Во сколько проснулся?", get_morning_time_buttons(), edit=True)
 
-@dp.message_handler(state=DaySummaryStates.gratitude)
-async def summary_gratitude(message: types.Message, state: FSMContext):
+@dp.message_handler(state=SleepStates.wake_time)
+async def sleep_wake_time(message: types.Message, state: FSMContext):
     if message.text in ("❌ Отмена", "⬅️ Назад"):
         await safe_finish(state, message)
         return
-    gratitude = message.text if message.text != "Пропустить" else ""
-    await state.update_data(gratitude=gratitude)
-    await DaySummaryStates.next()
-    await edit_or_send(state, message.chat.id, "Заметка? (можно пропустить)", get_skip_markup_text(), edit=True)
+    if message.text == "Другое":
+        await send_temp_message(message.chat.id, "Введи время в формате ЧЧ:ММ, например 07:30", 3)
+        return
+    if not is_valid_time_text(message.text):
+        await send_temp_message(message.chat.id, "❌ Укажи время в формате ЧЧ:ММ", 3)
+        return
+    await state.update_data(wake_time=message.text)
+    await SleepStates.quality.set()
+    await edit_or_send(state, message.chat.id, "Оцени качество сна (1–10):", get_energy_stress_buttons(), edit=True)
 
-@dp.message_handler(state=DaySummaryStates.note)
-async def summary_note(message: types.Message, state: FSMContext):
+@dp.message_handler(state=SleepStates.quality)
+async def sleep_quality(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    if not is_valid_score_text(message.text):
+        await send_temp_message(message.chat.id, "❌ Оценка должна быть от 1 до 10", 3)
+        return
+    await state.update_data(quality=int(message.text))
+    await SleepStates.woke_night.set()
+    await edit_or_send(state, message.chat.id, "Просыпался ночью?", get_yes_no_buttons(), edit=True)
+
+@dp.message_handler(state=SleepStates.woke_night)
+async def sleep_woke_night(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    if message.text not in ("✅ Да", "❌ Нет"):
+        await send_temp_message(message.chat.id, "❌ Выбери ответ кнопками", 3)
+        return
+    await state.update_data(woke_night=(message.text == "✅ Да"))
+    await SleepStates.note.set()
+    await edit_or_send(state, message.chat.id, "Заметка по сну? (можно пропустить)", get_skip_markup_text(), edit=True)
+
+@dp.message_handler(state=SleepStates.note)
+async def sleep_note(message: types.Message, state: FSMContext):
     if message.text in ("❌ Отмена", "⬅️ Назад"):
         await safe_finish(state, message)
         return
     data = await state.get_data()
-    note = message.text if message.text != "Пропустить" else ""
-    success = db.add_day_summary(message.from_user.id, data["score"], data["best"], data["worst"], data["gratitude"], note)
+    note = "" if message.text == "Пропустить" else message.text
+    saved = db.add_sleep(
+        message.from_user.id,
+        data.get("bed_time"),
+        data.get("wake_time"),
+        data.get("quality"),
+        data.get("woke_night"),
+        note
+    )
     await delete_dialog_message(state)
     await state.finish()
-    if success:
-        await send_temp_message(message.chat.id, "✅ Итог дня сохранен!", 2)
+    if saved:
+        await send_temp_message(message.chat.id, "✅ Сон сохранён!", 2)
     else:
-        await send_temp_message(message.chat.id, "❌ Не удалось сохранить итог дня.", 3)
+        await send_temp_message(message.chat.id, "🛌 Сон за сегодня уже записан.", 3)
     await message.answer("Главное меню", reply_markup=get_main_menu())
+
+@dp.message_handler(text="⚡️ Чек-ин")
+async def checkin_start(message: types.Message, state: FSMContext):
+    await CheckinStates.energy.set()
+    await edit_or_send(state, message.chat.id, "Оцени уровень энергии (1–10):", get_energy_stress_buttons(), edit=False)
+
+@dp.message_handler(state=CheckinStates.energy)
+async def checkin_energy(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    if not is_valid_score_text(message.text):
+        await send_temp_message(message.chat.id, "❌ Оценка должна быть от 1 до 10", 3)
+        return
+    await state.update_data(energy=int(message.text))
+    await CheckinStates.stress.set()
+    await edit_or_send(state, message.chat.id, "Оцени уровень стресса (1–10):", get_energy_stress_buttons(), edit=True)
+
+@dp.message_handler(state=CheckinStates.stress)
+async def checkin_stress(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    if not is_valid_score_text(message.text):
+        await send_temp_message(message.chat.id, "❌ Оценка должна быть от 1 до 10", 3)
+        return
+    await state.update_data(stress=int(message.text), emotions=[])
+    await CheckinStates.emotions.set()
+    await edit_or_send(state, message.chat.id, "Выбери эмоции (можно несколько), затем нажми «✅ Готово»", get_emotion_buttons(), edit=True)
+
+@dp.message_handler(state=CheckinStates.emotions)
+async def checkin_emotions(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await safe_finish(state, message)
+        return
+    data = await state.get_data()
+    emotions = data.get("emotions", [])
+    if message.text == "⬅️ Назад":
+        await CheckinStates.stress.set()
+        await edit_or_send(state, message.chat.id, "Оцени уровень стресса (1–10):", get_energy_stress_buttons(), edit=True)
+        return
+    if message.text == "✍️ Своя":
+        await send_temp_message(message.chat.id, "Напиши свою эмоцию текстом, затем нажми «✅ Готово».", 4)
+        return
+    if message.text == "✅ Готово":
+        await CheckinStates.note.set()
+        await edit_or_send(state, message.chat.id, "Короткая заметка? (можно пропустить)", get_skip_markup_text(), edit=True)
+        return
+    if message.text not in emotions:
+        emotions.append(message.text)
+        await state.update_data(emotions=emotions)
+    await send_temp_message(message.chat.id, f"Добавлено эмоций: {len(emotions)}", 2)
+
+@dp.message_handler(state=CheckinStates.note)
+async def checkin_note(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    data = await state.get_data()
+    note = "" if message.text == "Пропустить" else message.text
+    db.add_checkin(
+        message.from_user.id,
+        "manual",
+        data.get("energy"),
+        data.get("stress"),
+        data.get("emotions", []),
+        note
+    )
+    await delete_dialog_message(state)
+    await state.finish()
+    await send_temp_message(message.chat.id, "✅ Чек-ин сохранён!", 2)
+    await message.answer("Главное меню", reply_markup=get_main_menu())
+
+@dp.message_handler(text="📝 Итог дня")
+async def day_summary_start(message: types.Message, state: FSMContext):
+    target_date = db.get_target_date_for_summary(message.from_user.id)
+    if target_date is None:
+        await send_temp_message(message.chat.id, "🕕 Итог дня доступен с 18:00 до 06:00 по твоему часовому поясу.", 4)
+        return
+    if db.has_day_summary_for_date(message.from_user.id, target_date):
+        await send_temp_message(message.chat.id, f"📝 Итог за {target_date} уже сохранён.", 4)
+        return
+    await DaySummaryStates.score.set()
+    await edit_or_send(state, message.chat.id, "Как прошёл день? Оценка от 1 до 10:", get_energy_stress_buttons(), edit=False)
+
+@dp.message_handler(state=DaySummaryStates.score)
+async def summary_score(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    if not is_valid_score_text(message.text):
+        await send_temp_message(message.chat.id, "❌ Оценка должна быть от 1 до 10", 3)
+        return
+    await state.update_data(score=int(message.text))
+    await DaySummaryStates.best.set()
+    await edit_or_send(state, message.chat.id, "Что было лучшим за день?", get_skip_markup_text(), edit=True)
+
+@dp.message_handler(state=DaySummaryStates.best)
+async def summary_best(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    best = message.text if message.text != "Пропустить" else ""
+    await state.update_data(best=best)
+    await DaySummaryStates.worst.set()
+    await edit_or_send(state, message.chat.id, "Что было самым сложным?", get_skip_markup_text(), edit=True)
 
 # ========== ЕДА И НАПИТКИ ==========
 @dp.message_handler(text="🍽🥤 Еда и напитки")
