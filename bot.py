@@ -731,7 +731,7 @@ async def show_notes_list(chat_id: int, user_id: int):
         await bot.send_message(chat_id, "📋 У тебя пока нет заметок.", reply_markup=get_notes_reminders_main_menu())
         return
     visible_notes = list(reversed(notes[-10:]))
-    text = "📋 *Твои заметки:*\n\n"
+    text = "📋 Твои заметки:\n\n"
     for i, note in enumerate(visible_notes, 1):
         text += f"{i}. {note['text']}\n   📅 {note['date']} {note['time']}\n\n"
     await bot.send_message(chat_id, text, reply_markup=get_notes_list_keyboard(visible_notes))
