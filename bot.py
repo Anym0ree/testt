@@ -766,28 +766,26 @@ async def reminder_advance(message: types.Message, state: FSMContext):
 
 @dp.message_handler(text="📋 Мои записи")
 async def view_records(message: types.Message, state: FSMContext):
-    await state.finish()  # сбрасываем любое активное состояние
+    await state.finish()
     await message.answer("Что хочешь посмотреть?", reply_markup=get_view_type_buttons())
 
 # ========== ЗАМЕТКИ (список и редактирование) ==========
 @dp.message_handler(text="📋 Заметки")
 async def list_notes(message: types.Message, state: FSMContext):
-    await state.finish()  # принудительный сброс
-    await show_notes_list(message.chat.id, message.from_user.id)
-
-async def show_notes_list(chat_id: int, user_id: int):
-    notes = db.get_notes(user_id)
+    await state.finish()
+    notes = db.get_notes(message.from_user.id)
     if not notes:
-        await bot.send_message(chat_id, "📋 У тебя пока нет заметок.", reply_markup=get_notes_reminders_main_menu())
+        await message.answer("📋 У тебя пока нет заметок.", reply_markup=get_notes_reminders_main_menu())
         return
     visible_notes = list(reversed(notes[-10:]))
-    text = "📋 Твои заметки:\n\n"
+    text = "📋 *Твои заметки (последние 10):*\n\n"
     for i, note in enumerate(visible_notes, 1):
         text += f"{i}. {note['text']}\n   📅 {note['date']} {note['time']}\n\n"
-    await bot.send_message(chat_id, text, reply_markup=get_notes_list_keyboard(visible_notes))
+    await message.answer(text, parse_mode="Markdown", reply_markup=get_notes_list_keyboard(visible_notes))
 
-@dp.callback_query_handler(lambda c: re.match(r"^note_select_\d+$", c.data or ""), state="*")
-async def note_select(callback: types.CallbackQuery):
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("note_select_"), state='*')
+async def note_select(callback: types.CallbackQuery, state: FSMContext):
+    await state.finish()
     note_id = int(callback.data.split("_")[-1])
     notes = db.get_notes(callback.from_user.id)
     note = next((n for n in notes if n.get("id") == note_id), None)
@@ -795,85 +793,104 @@ async def note_select(callback: types.CallbackQuery):
         await callback.answer("Заметка не найдена", show_alert=True)
         return
     text = (
-        "📝 Заметка\n\n"
+        "📝 *Заметка*\n\n"
         f"{note['text']}\n\n"
         f"📅 {note['date']} {note['time']}"
     )
-    await callback.message.edit_text(text, reply_markup=get_note_action_keyboard(note_id))
+    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=get_note_action_keyboard(note_id))
     await callback.answer()
 
-@dp.callback_query_handler(lambda c: c.data.startswith("note_del_") and not c.data.startswith("note_del_confirm_"), state="*")
-async def delete_note_request(callback: types.CallbackQuery):
-    note_id = int(callback.data.split("_")[-1])
-    await callback.message.edit_text(
-        "⚠️ Точно удалить заметку?",
-        reply_markup=get_note_delete_confirm_keyboard(note_id)
-    )
-    await callback.answer()
-
-@dp.callback_query_handler(lambda c: c.data.startswith("note_del_confirm_"), state="*")
-async def delete_note_confirm(callback: types.CallbackQuery):
-    note_id = int(callback.data.split("_")[-1])
-    success = db.delete_note_by_id(callback.from_user.id, note_id)
-    if success:
-        await callback.answer("Заметка удалена", show_alert=False)
-        await show_notes_list(callback.message.chat.id, callback.from_user.id)
-    else:
-        await callback.answer("Ошибка удаления", show_alert=True)
-
-@dp.callback_query_handler(lambda c: c.data.startswith("note_edit_"), state="*")
-async def edit_note_start(callback: types.CallbackQuery, state: FSMContext):
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("note_edit_"), state='*')
+async def note_edit_start(callback: types.CallbackQuery, state: FSMContext):
+    await state.finish()
     note_id = int(callback.data.split("_")[-1])
     await state.update_data(edit_note_id=note_id)
     await NoteStates.edit_text.set()
-    await safe_edit_from_callback(
-        callback,
+    await callback.message.edit_text(
         "✏️ Введи новый текст для заметки:",
         reply_markup=get_inline_cancel_button("note_edit_cancel")
     )
+    await callback.answer()
 
 @dp.message_handler(state=NoteStates.edit_text)
-async def update_note_text(message: types.Message, state: FSMContext):
+async def note_edit_text(message: types.Message, state: FSMContext):
     data = await state.get_data()
     note_id = data.get("edit_note_id")
-    if note_id:
-        db.update_note_text(message.from_user.id, note_id, message.text)
-        await delete_dialog_message(state)
-        await state.finish()
-        await send_temp_message(message.chat.id, "✅ Заметка обновлена!", 2)
-        await show_notes_list(message.chat.id, message.from_user.id)
-    else:
+    if not note_id:
         await safe_finish(state, message, "Ошибка: заметка не найдена")
+        return
+    if message.text == "⬅️ Назад":
+        await state.finish()
+        notes = db.get_notes(message.from_user.id)
+        if notes:
+            visible_notes = list(reversed(notes[-10:]))
+            text = "📋 *Твои заметки (последние 10):*\n\n"
+            for i, note in enumerate(visible_notes, 1):
+                text += f"{i}. {note['text']}\n   📅 {note['date']} {note['time']}\n\n"
+            await message.answer(text, parse_mode="Markdown", reply_markup=get_notes_list_keyboard(visible_notes))
+        else:
+            await message.answer("📋 У тебя пока нет заметок.", reply_markup=get_notes_reminders_main_menu())
+        return
+    db.update_note_text(message.from_user.id, note_id, message.text)
+    await state.finish()
+    await message.answer("✅ Заметка обновлена!", reply_markup=get_main_menu())
 
-@dp.callback_query_handler(lambda c: c.data == "note_edit_cancel", state="*")
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("note_del_"), state='*')
+async def note_delete(callback: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+    note_id = int(callback.data.split("_")[-1])
+    db.delete_note_by_id(callback.from_user.id, note_id)
+    await callback.answer("Заметка удалена", show_alert=False)
+    notes = db.get_notes(callback.from_user.id)
+    if notes:
+        visible_notes = list(reversed(notes[-10:]))
+        text = "📋 *Твои заметки (последние 10):*\n\n"
+        for i, note in enumerate(visible_notes, 1):
+            text += f"{i}. {note['text']}\n   📅 {note['date']} {note['time']}\n\n"
+        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=get_notes_list_keyboard(visible_notes))
+    else:
+        await callback.message.edit_text("📋 У тебя пока нет заметок.", reply_markup=get_notes_reminders_main_menu())
+    await callback.message.answer("Главное меню", reply_markup=get_main_menu())
+
+@dp.callback_query_handler(lambda c: c.data == "note_edit_cancel", state='*')
 async def note_edit_cancel(callback: types.CallbackQuery, state: FSMContext):
     await state.finish()
-    await show_notes_list(callback.message.chat.id, callback.from_user.id)
+    notes = db.get_notes(callback.from_user.id)
+    if notes:
+        visible_notes = list(reversed(notes[-10:]))
+        text = "📋 *Твои заметки (последние 10):*\n\n"
+        for i, note in enumerate(visible_notes, 1):
+            text += f"{i}. {note['text']}\n   📅 {note['date']} {note['time']}\n\n"
+        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=get_notes_list_keyboard(visible_notes))
+    else:
+        await callback.message.edit_text("📋 У тебя пока нет заметок.", reply_markup=get_notes_reminders_main_menu())
+    await callback.answer()
 
-@dp.callback_query_handler(lambda c: c.data == "close_notes", state="*")
+@dp.callback_query_handler(lambda c: c.data == "close_notes", state='*')
 async def close_notes(callback: types.CallbackQuery):
     await callback.message.delete()
     await callback.message.answer("📝 Заметки и напоминания", reply_markup=get_notes_reminders_main_menu())
     await callback.answer()
 
-@dp.callback_query_handler(lambda c: c.data == "note_back_to_list", state="*")
+@dp.callback_query_handler(lambda c: c.data == "note_back_to_list", state='*')
 async def note_back_to_list(callback: types.CallbackQuery):
     await callback.message.delete()
-    await show_notes_list(callback.message.chat.id, callback.from_user.id)
+    await list_notes(callback.message, dp.current_state(chat=callback.message.chat.id, user=callback.from_user.id))
     await callback.answer()
 
 # ========== НАПОМИНАНИЯ (список, редактирование, удаление) ==========
 @dp.message_handler(text="⏰ Напоминания")
 async def list_reminders(message: types.Message, state: FSMContext):
-    await state.finish()  # сброс состояния
+    await state.finish()
     reminders = db.get_active_reminders(message.from_user.id)
     if not reminders:
         await message.answer("📋 У тебя пока нет активных напоминаний.", reply_markup=get_notes_reminders_main_menu())
         return
-    await message.answer("📋 Твои напоминания\n\nНажми на напоминание, чтобы управлять им:", reply_markup=get_reminder_list_keyboard(reminders))
+    await message.answer("📋 *Твои напоминания*\n\nНажми на напоминание, чтобы управлять им:", parse_mode="Markdown", reply_markup=get_reminder_list_keyboard(reminders))
 
-@dp.callback_query_handler(lambda c: c.data.startswith("reminder_select_"), state="*")
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("reminder_select_"), state='*')
 async def reminder_select(callback: types.CallbackQuery, state: FSMContext):
+    await state.finish()
     reminder_id = int(callback.data.split("_")[-1])
     reminder = db.get_reminder_by_id(callback.from_user.id, reminder_id)
     if not reminder:
@@ -882,117 +899,63 @@ async def reminder_select(callback: types.CallbackQuery, state: FSMContext):
     await state.update_data(edit_reminder_id=reminder_id)
     is_extra = bool(reminder.get("parent_id"))
     reminder_type = "Доп. напоминание" if is_extra else "Основное напоминание"
-    text = f"🕐 {reminder['date']} {reminder['time']}\n📝 {reminder['text']}\n\nТип: {reminder_type}"
-    await callback.message.edit_text(text, reply_markup=get_reminder_action_keyboard(reminder_id, is_extra=is_extra))
+    text = f"🕐 {reminder['date']} {reminder['time']}\n📝 {reminder['text']}\n\n*Тип:* {reminder_type}"
+    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=get_reminder_action_keyboard(reminder_id, is_extra=is_extra))
     await callback.answer()
 
-@dp.callback_query_handler(lambda c: c.data.startswith("reminder_delete_confirm_"), state="*")
-async def reminder_delete_request(callback: types.CallbackQuery):
-    reminder_id = int(callback.data.split("_")[-1])
-    reminder = db.get_reminder_by_id(callback.from_user.id, reminder_id)
-    if not reminder:
-        await callback.answer("Напоминание не найдено", show_alert=True)
-        return
-    is_extra = bool(reminder.get("parent_id"))
-    await callback.message.edit_text(
-        "⚠️ Подтверди удаление:",
-        reply_markup=get_reminder_delete_confirm_keyboard(reminder_id, is_extra=is_extra)
-    )
-    await callback.answer()
-
-@dp.callback_query_handler(lambda c: c.data.startswith("reminder_delete_") and not c.data.startswith("reminder_delete_confirm_"), state="*")
-async def reminder_delete(callback: types.CallbackQuery):
-    reminder_id = int(callback.data.split("_")[-1])
-    db.delete_reminder(callback.from_user.id, reminder_id)
-    await callback.message.edit_text("✅ Напоминание удалено")
-    await callback.answer()
-    reminders = db.get_active_reminders(callback.from_user.id)
-    if reminders:
-        await callback.message.answer("📋 Твои напоминания", reply_markup=get_reminder_list_keyboard(reminders))
-    else:
-        await callback.message.answer("📋 У тебя пока нет активных напоминаний", reply_markup=get_notes_reminders_main_menu())
-
-@dp.callback_query_handler(lambda c: c.data.startswith("reminder_edit_text_"), state="*")
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("reminder_edit_text_"), state='*')
 async def reminder_edit_text_start(callback: types.CallbackQuery, state: FSMContext):
+    await state.finish()
     reminder_id = int(callback.data.split("_")[-1])
     await state.update_data(edit_reminder_id=reminder_id)
     await ReminderStates.edit_text.set()
     await callback.message.edit_text(
-        "✏️ Введи новый текст для напоминания",
-        reply_markup=get_inline_cancel_button("reminder_back_to_list")
+        "✏️ Введи новый текст для напоминания:",
+        reply_markup=get_inline_cancel_button("reminder_edit_cancel")
     )
     await callback.answer()
 
 @dp.message_handler(state=ReminderStates.edit_text)
-async def reminder_update_text(message: types.Message, state: FSMContext):
+async def reminder_edit_text(message: types.Message, state: FSMContext):
     data = await state.get_data()
     reminder_id = data.get("edit_reminder_id")
-    if reminder_id:
-        db.update_reminder_text(message.from_user.id, reminder_id, message.text)
-        await delete_dialog_message(state)
-        await state.finish()
-        await send_temp_message(message.chat.id, "✅ Текст напоминания обновлён", 2)
-        await list_reminders(message, state)
-    else:
+    if not reminder_id:
         await safe_finish(state, message, "Ошибка: напоминание не найдено")
+        return
+    if message.text == "⬅️ Назад":
+        await state.finish()
+        await list_reminders(message, state)
+        return
+    db.update_reminder_text(message.from_user.id, reminder_id, message.text)
+    await state.finish()
+    await message.answer("✅ Текст напоминания обновлён!", reply_markup=get_main_menu())
 
-@dp.callback_query_handler(lambda c: c.data.startswith("reminder_edit_time_"), state="*")
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("reminder_delete_"), state='*')
+async def reminder_delete(callback: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+    reminder_id = int(callback.data.split("_")[-1])
+    db.delete_reminder(callback.from_user.id, reminder_id)
+    await callback.answer("Напоминание удалено", show_alert=False)
+    reminders = db.get_active_reminders(callback.from_user.id)
+    if reminders:
+        await callback.message.edit_text("📋 *Твои напоминания*\n\nНажми на напоминание, чтобы управлять им:", parse_mode="Markdown", reply_markup=get_reminder_list_keyboard(reminders))
+    else:
+        await callback.message.edit_text("📋 У тебя пока нет активных напоминаний.", reply_markup=get_notes_reminders_main_menu())
+    await callback.message.answer("Главное меню", reply_markup=get_main_menu())
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("reminder_edit_time_"), state='*')
 async def reminder_edit_time_start(callback: types.CallbackQuery, state: FSMContext):
+    await state.finish()
     reminder_id = int(callback.data.split("_")[-1])
     await state.update_data(edit_reminder_id=reminder_id)
     await ReminderStates.edit_date.set()
-    await callback.message.answer("📅 Выбери новую дату:", reply_markup=get_reminder_date_buttons())
+    await callback.message.edit_text("📅 Выбери новую дату:", reply_markup=get_reminder_date_buttons())
     await callback.answer()
-
-@dp.callback_query_handler(lambda c: c.data.startswith("reminder_edit_advance_"), state="*")
-async def reminder_edit_advance_start(callback: types.CallbackQuery, state: FSMContext):
-    reminder_id = int(callback.data.split("_")[-1])
-    await state.update_data(edit_reminder_id=reminder_id)
-
-    reminder = db.get_reminder_by_id(callback.from_user.id, reminder_id)
-    if not reminder:
-        await callback.answer("Напоминание не найдено", show_alert=True)
-        return
-
-    current_kind = reminder.get("advance_type")
-    if reminder.get("parent_id"):
-        parent = db.get_reminder_by_id(callback.from_user.id, reminder.get("parent_id"))
-        current_kind = reminder.get("advance_kind") if reminder else None
-        reminder_id = parent["id"] if parent else reminder_id
-    await callback.message.edit_text(
-        "⏰ Настройка дополнительного напоминания.\nВыбери вариант:",
-        reply_markup=get_reminder_advance_inline_keyboard(reminder_id, current_kind if current_kind else "none")
-    )
-    await callback.answer()
-
-@dp.callback_query_handler(lambda c: c.data.startswith("remadv_set_"), state="*")
-async def reminder_set_advance(callback: types.CallbackQuery, state: FSMContext):
-    match = re.fullmatch(r"remadv_set_(\d+)_(day|3h|1h|none)", callback.data or "")
-    if not match:
-        await callback.answer("Некорректная команда", show_alert=True)
-        return
-    reminder_id = int(match.group(1))
-    selected_kind = match.group(2)
-    advance_type = None if selected_kind == "none" else selected_kind
-
-    ok = db.update_reminder_advance(callback.from_user.id, reminder_id, advance_type)
-    if not ok and advance_type:
-        await callback.answer("Доп. напоминание попало в прошлое. Выбери другой вариант или время.", show_alert=True)
-    else:
-        await callback.answer("✅ Доп. напоминание обновлено", show_alert=False)
-
-    await state.update_data(edit_reminder_id=reminder_id)
-    updated = db.get_reminder_by_id(callback.from_user.id, reminder_id)
-    reminder_text = updated["text"] if updated else "Напоминание"
-    await callback.message.edit_text(
-        f"📝 {reminder_text}\n\nВыбери действие:",
-        reply_markup=get_reminder_action_keyboard(reminder_id, is_extra=False)
-    )
 
 @dp.message_handler(state=ReminderStates.edit_date)
 async def reminder_edit_date(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
-        await safe_finish(state, message)
+        await state.finish()
         await list_reminders(message, state)
         return
     if message.text == "⬅️ Назад":
@@ -1038,7 +1001,7 @@ async def reminder_edit_date(message: types.Message, state: FSMContext):
 @dp.message_handler(state=ReminderStates.edit_hour)
 async def reminder_edit_hour(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
-        await safe_finish(state, message)
+        await state.finish()
         await list_reminders(message, state)
         return
     if message.text == "⬅️ Назад":
@@ -1059,7 +1022,7 @@ async def reminder_edit_hour(message: types.Message, state: FSMContext):
 @dp.message_handler(state=ReminderStates.edit_minute)
 async def reminder_edit_minute(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
-        await safe_finish(state, message)
+        await state.finish()
         await list_reminders(message, state)
         return
     if message.text == "⬅️ Назад":
@@ -1072,28 +1035,81 @@ async def reminder_edit_minute(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
     reminder_id = data.get("edit_reminder_id")
-    if reminder_id:
-        new_date = data.get("new_date")
-        new_time = f"{data['new_hour']:02d}:{message.text}"
-        db.update_reminder_time(message.from_user.id, reminder_id, new_date, new_time)
-        await delete_dialog_message(state)
-        await state.finish()
-        await send_temp_message(message.chat.id, f"✅ Время напоминания обновлено: {new_date} {new_time}", 2)
-        await list_reminders(message, state)
-    else:
+    if not reminder_id:
         await safe_finish(state, message, "Ошибка: напоминание не найдено")
+        return
+    new_date = data.get("new_date")
+    new_time = f"{data['new_hour']:02d}:{message.text}"
+    db.update_reminder_time(message.from_user.id, reminder_id, new_date, new_time)
+    await state.finish()
+    await message.answer(f"✅ Время напоминания обновлено: {new_date} {new_time}", reply_markup=get_main_menu())
 
-@dp.callback_query_handler(lambda c: c.data == "reminder_back_to_list", state="*")
-async def reminder_back_to_list(callback: types.CallbackQuery):
-    reminders = db.get_active_reminders(callback.from_user.id)
-    if reminders:
-        await callback.message.edit_text("📋 Твои напоминания\n\nНажми на напоминание, чтобы управлять им:", reply_markup=get_reminder_list_keyboard(reminders))
-    else:
-        await callback.message.edit_text("📋 У тебя пока нет активных напоминаний", reply_markup=get_notes_reminders_main_menu())
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("reminder_edit_advance_"), state='*')
+async def reminder_edit_advance_start(callback: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+    reminder_id = int(callback.data.split("_")[-1])
+    reminder = db.get_reminder_by_id(callback.from_user.id, reminder_id)
+    if not reminder:
+        await callback.answer("Напоминание не найдено", show_alert=True)
+        return
+    current_kind = reminder.get("advance_type")
+    if reminder.get("parent_id"):
+        parent = db.get_reminder_by_id(callback.from_user.id, reminder.get("parent_id"))
+        current_kind = reminder.get("advance_kind") if reminder else None
+        reminder_id = parent["id"] if parent else reminder_id
+    await callback.message.edit_text(
+        "⏰ Настройка дополнительного напоминания.\nВыбери вариант:",
+        reply_markup=get_reminder_advance_inline_keyboard(reminder_id, current_kind if current_kind else "none")
+    )
     await callback.answer()
 
-@dp.callback_query_handler(lambda c: c.data == "reminder_back_to_menu", state="*")
-async def reminder_back_to_menu(callback: types.CallbackQuery):
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("remadv_set_"), state='*')
+async def reminder_set_advance(callback: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+    match = re.fullmatch(r"remadv_set_(\d+)_(day|3h|1h|none)", callback.data or "")
+    if not match:
+        await callback.answer("Некорректная команда", show_alert=True)
+        return
+    reminder_id = int(match.group(1))
+    selected_kind = match.group(2)
+    advance_type = None if selected_kind == "none" else selected_kind
+
+    ok = db.update_reminder_advance(callback.from_user.id, reminder_id, advance_type)
+    if not ok and advance_type:
+        await callback.answer("Доп. напоминание попало в прошлое. Выбери другой вариант или время.", show_alert=True)
+    else:
+        await callback.answer("✅ Доп. напоминание обновлено", show_alert=False)
+
+    updated = db.get_reminder_by_id(callback.from_user.id, reminder_id)
+    reminder_text = updated["text"] if updated else "Напоминание"
+    await callback.message.edit_text(
+        f"📝 {reminder_text}\n\nВыбери действие:",
+        reply_markup=get_reminder_action_keyboard(reminder_id, is_extra=False)
+    )
+
+@dp.callback_query_handler(lambda c: c.data == "reminder_edit_cancel", state='*')
+async def reminder_edit_cancel(callback: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+    reminders = db.get_active_reminders(callback.from_user.id)
+    if reminders:
+        await callback.message.edit_text("📋 *Твои напоминания*\n\nНажми на напоминание, чтобы управлять им:", parse_mode="Markdown", reply_markup=get_reminder_list_keyboard(reminders))
+    else:
+        await callback.message.edit_text("📋 У тебя пока нет активных напоминаний.", reply_markup=get_notes_reminders_main_menu())
+    await callback.answer()
+
+@dp.callback_query_handler(lambda c: c.data == "reminder_back_to_list", state='*')
+async def reminder_back_to_list(callback: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+    reminders = db.get_active_reminders(callback.from_user.id)
+    if reminders:
+        await callback.message.edit_text("📋 *Твои напоминания*\n\nНажми на напоминание, чтобы управлять им:", parse_mode="Markdown", reply_markup=get_reminder_list_keyboard(reminders))
+    else:
+        await callback.message.edit_text("📋 У тебя пока нет активных напоминаний.", reply_markup=get_notes_reminders_main_menu())
+    await callback.answer()
+
+@dp.callback_query_handler(lambda c: c.data == "reminder_back_to_menu", state='*')
+async def reminder_back_to_menu(callback: types.CallbackQuery, state: FSMContext):
+    await state.finish()
     await callback.message.edit_text("📝 Заметки и напоминания", reply_markup=get_notes_reminders_main_menu())
     await callback.answer()
 
@@ -1136,7 +1152,6 @@ async def export_any_url(message: types.Message, state: FSMContext):
         return
     await state.update_data(url=url)
     await ExportStates.format.set()
-    # Определяем источник для клавиатуры (можно упростить)
     await edit_or_send(state, message.chat.id, "Выбери формат:", reply_markup=get_download_formats_keyboard(source="unknown"), edit=True)
 
 @dp.message_handler(state=ExportStates.format)
