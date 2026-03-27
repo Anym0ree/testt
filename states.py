@@ -1,6 +1,5 @@
 from aiogram.dispatcher.filters.state import State, StatesGroup
 
-
 class SleepStates(StatesGroup):
     bed_time = State()
     wake_time = State()
@@ -8,13 +7,11 @@ class SleepStates(StatesGroup):
     woke_night = State()
     note = State()
 
-
 class CheckinStates(StatesGroup):
     energy = State()
     stress = State()
     emotions = State()
     note = State()
-
 
 class DaySummaryStates(StatesGroup):
     score = State()
@@ -23,30 +20,24 @@ class DaySummaryStates(StatesGroup):
     gratitude = State()
     note = State()
 
-
 class FoodStates(StatesGroup):
     meal_type = State()
     food_text = State()
-
 
 class DrinkStates(StatesGroup):
     drink_type = State()
     amount = State()
 
-
 class FoodDrinkStates(StatesGroup):
     type = State()
-
 
 class TimezoneStates(StatesGroup):
     city = State()
     offset = State()
 
-
 class NoteStates(StatesGroup):
     text = State()
     edit_text = State()
-
 
 class ReminderStates(StatesGroup):
     text = State()
@@ -60,11 +51,9 @@ class ReminderStates(StatesGroup):
     edit_minute = State()
     edit_reminder_id = State()
 
-
 class ExportStates(StatesGroup):
     url = State()
     format = State()
-
 
 class ConverterStates(StatesGroup):
     file = State()
