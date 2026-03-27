@@ -67,6 +67,11 @@ async def safe_delete_message_obj(message_obj):
         await message_obj.delete()
     except Exception:
         pass
+async def safe_edit_from_callback(callback: types.CallbackQuery, text: str, **kwargs):
+    try:
+        await callback.message.edit_text(text, **kwargs)
+    except Exception:
+        await bot.send_message(callback.message.chat.id, text, **kwargs)
 
 def safe_remove_file(path):
     if path and isinstance(path, str) and os.path.exists(path):
