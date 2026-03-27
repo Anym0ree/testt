@@ -58,11 +58,23 @@ def get_notes_list_keyboard(notes):
     buttons = []
     for note in notes:
         text = note['text'][:30] + "..." if len(note['text']) > 30 else note['text']
-        buttons.append([
-            InlineKeyboardButton(text=f"✏️ {text}", callback_data=f"note_edit_{note['id']}"),
-            InlineKeyboardButton(text="🗑", callback_data=f"note_del_{note['id']}")
-        ])
-    buttons.append([InlineKeyboardButton(text="❌ Закрыть", callback_data="close_notes")])
+        buttons.append([InlineKeyboardButton(text=f"📝 {text}", callback_data=f"note_select_{note['id']}")])
+    buttons.append([InlineKeyboardButton(text="⬅️ К меню заметок", callback_data="close_notes")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_note_action_keyboard(note_id):
+    buttons = [
+        [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"note_edit_{note_id}")],
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"note_del_{note_id}")],
+        [InlineKeyboardButton(text="⬅️ К списку", callback_data="note_back_to_list")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_note_delete_confirm_keyboard(note_id):
+    buttons = [
+        [InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"note_del_confirm_{note_id}")],
+        [InlineKeyboardButton(text="⬅️ Отмена", callback_data=f"note_select_{note_id}")]
+    ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_reminder_list_keyboard(reminders):
@@ -76,15 +88,23 @@ def get_reminder_list_keyboard(reminders):
 
 def get_reminder_action_keyboard(reminder_id, is_extra=False):
     buttons = [
-        [InlineKeyboardButton(text="✏️ Изменить текст", callback_data="reminder_edit_text")],
-        [InlineKeyboardButton(text="🕐 Изменить время", callback_data="reminder_edit_time")],
+        [InlineKeyboardButton(text="✏️ Изменить текст", callback_data=f"reminder_edit_text_{reminder_id}")],
+        [InlineKeyboardButton(text="🕐 Изменить время", callback_data=f"reminder_edit_time_{reminder_id}")],
     ]
     if not is_extra:
-        buttons.append([InlineKeyboardButton(text="🔔 Доп. напоминание", callback_data="reminder_edit_advance")])
+        buttons.append([InlineKeyboardButton(text="🔔 Доп. напоминание", callback_data=f"reminder_edit_advance_{reminder_id}")])
     buttons.extend([
-        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"reminder_delete_{reminder_id}")],
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"reminder_delete_confirm_{reminder_id}")],
         [InlineKeyboardButton(text="⬅️ К списку", callback_data="reminder_back_to_list")]
     ])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_reminder_delete_confirm_keyboard(reminder_id, is_extra=False):
+    delete_text = "Удалить только доп. напоминание" if is_extra else "Удалить напоминание и доп."
+    buttons = [
+        [InlineKeyboardButton(text=f"✅ {delete_text}", callback_data=f"reminder_delete_{reminder_id}")],
+        [InlineKeyboardButton(text="⬅️ Отмена", callback_data=f"reminder_select_{reminder_id}")]
+    ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_reminder_date_buttons():
