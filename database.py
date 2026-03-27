@@ -301,10 +301,17 @@ class Database:
 
     def delete_reminder(self, user_id, reminder_id):
         reminders = self._load_json(user_id, "reminders.json")
-        related_ids = self._get_related_reminder_ids(reminders, reminder_id)
-        for r in reminders:
-            if r.get("id") in related_ids:
-                r["is_active"] = False
+        selected = next((r for r in reminders if r.get("id") == reminder_id), None)
+        if not selected:
+            return False
+
+        if selected.get("parent_id"):
+            selected["is_active"] = False
+        else:
+            related_ids = self._get_related_reminder_ids(reminders, reminder_id)
+            for r in reminders:
+                if r.get("id") in related_ids:
+                    r["is_active"] = False
         self._save_json(user_id, "reminders.json", reminders)
         return True
 
