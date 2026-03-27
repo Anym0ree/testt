@@ -734,9 +734,9 @@ async def show_notes_list(chat_id: int, user_id: int):
     text = "📋 *Твои заметки:*\n\n"
     for i, note in enumerate(visible_notes, 1):
         text += f"{i}. {note['text']}\n   📅 {note['date']} {note['time']}\n\n"
-    await bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=get_notes_list_keyboard(visible_notes))
+    await bot.send_message(chat_id, text, reply_markup=get_notes_list_keyboard(visible_notes))
 
-@dp.callback_query_handler(lambda c: c.data.startswith("note_select_"), state="*")
+@dp.callback_query_handler(lambda c: re.match(r"^note_select_\d+$", c.data or ""), state="*")
 async def note_select(callback: types.CallbackQuery):
     note_id = int(callback.data.split("_")[-1])
     notes = db.get_notes(callback.from_user.id)
@@ -749,10 +749,10 @@ async def note_select(callback: types.CallbackQuery):
         f"{note['text']}\n\n"
         f"📅 {note['date']} {note['time']}"
     )
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=get_note_action_keyboard(note_id))
+    await callback.message.edit_text(text, reply_markup=get_note_action_keyboard(note_id))
     await callback.answer()
 
-@dp.callback_query_handler(lambda c: c.data.startswith("note_del_") and not c.data.startswith("note_del_confirm_"), state="*")
+@dp.callback_query_handler(lambda c: re.match(r"^note_del_\d+$", c.data or ""), state="*")
 async def delete_note_request(callback: types.CallbackQuery):
     note_id = int(callback.data.split("_")[-1])
     await callback.message.edit_text(
@@ -761,7 +761,7 @@ async def delete_note_request(callback: types.CallbackQuery):
     )
     await callback.answer()
 
-@dp.callback_query_handler(lambda c: c.data.startswith("note_del_confirm_"), state="*")
+@dp.callback_query_handler(lambda c: re.match(r"^note_del_confirm_\d+$", c.data or ""), state="*")
 async def delete_note_confirm(callback: types.CallbackQuery):
     note_id = int(callback.data.split("_")[-1])
     if db.delete_note_by_id(callback.from_user.id, note_id):
@@ -771,16 +771,6 @@ async def delete_note_confirm(callback: types.CallbackQuery):
     else:
         await callback.answer("Ошибка удаления", show_alert=True)
 
-@dp.callback_query_handler(lambda c: c.data.startswith("note_edit_"), state="*")
-async def edit_note_start(callback: types.CallbackQuery, state: FSMContext):
-    note_id = int(callback.data.split("_")[-1])
-    await state.update_data(edit_note_id=note_id)
-    await NoteStates.edit_text.set()
-    await callback.message.edit_text(
-        "✏️ Введи новый текст для заметки:",
-        reply_markup=get_inline_cancel_button("note_edit_cancel")
-    )
-    await callback.answer()
 
 @dp.callback_query_handler(lambda c: c.data == "note_edit_cancel", state="*")
 async def note_edit_cancel(callback: types.CallbackQuery, state: FSMContext):
@@ -794,8 +784,20 @@ async def note_edit_cancel(callback: types.CallbackQuery, state: FSMContext):
         text = "📋 *Твои заметки:*\n\n"
         for i, note in enumerate(visible_notes, 1):
             text += f"{i}. {note['text']}\n   📅 {note['date']} {note['time']}\n\n"
-        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=get_notes_list_keyboard(visible_notes))
+        await callback.message.edit_text(text, reply_markup=get_notes_list_keyboard(visible_notes))
     await callback.answer()
+
+
+@dp.callback_query_handler(lambda c: re.match(r"^note_edit_\d+$", c.data or ""), state="*")
+async def edit_note_start(callback: types.CallbackQuery, state: FSMContext):
+    note_id = int(callback.data.split("_")[-1])
+    await state.update_data(edit_note_id=note_id)
+    await NoteStates.edit_text.set()
+    await callback.message.edit_text(
+        "✏️ Введи новый текст для заметки:",
+        reply_markup=get_inline_cancel_button("note_edit_cancel")
+    )
+
 
 @dp.message_handler(state=NoteStates.edit_text)
 async def update_note_text(message: types.Message, state: FSMContext):
