@@ -13,7 +13,7 @@ from aiogram.utils import executor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from config import BOT_TOKEN, OPENAI_API_KEY
+from config import BOT_TOKEN, OPENAI_API_KEY, DATA_FOLDER
 from database import db
 from keyboards import *
 from states import *
@@ -214,11 +214,12 @@ async def show_start_flow(user_id: int, chat_id: int):
 
 @dp.message_handler(commands=['menu'], state='*')
 async def cmd_menu(message: types.Message, state: FSMContext):
-    # Очищаем кэш AI, если был активен
     ai_advisor.clear_user_data(message.from_user.id)
     await delete_dialog_message(state)
     await state.finish()
     await message.answer("Главное меню", reply_markup=get_main_menu())
+
+# ========== ВЫБОР ЧАСОВОГО ПОЯСА ==========
 @dp.message_handler(state=TimezoneStates.city)
 async def timezone_city(message: types.Message, state: FSMContext):
     if message.text in ("❌ Отмена", "⬅️ Назад"):
@@ -276,10 +277,333 @@ async def timezone_offset(message: types.Message, state: FSMContext):
     await state.finish()
     await message.answer("✅ Часовой пояс сохранён.", reply_markup=get_main_menu())
 
-# ========== ОСТАЛЬНЫЕ ОБРАБОТЧИКИ (СОН, ЧЕК-ИН, ИТОГ ДНЯ, ЕДА/НАПИТКИ) ==========
-# Они остаются без изменений (как в твоём исходном коде). 
-# Я не буду их дублировать здесь, чтобы не перегружать ответ, 
-# но в полном файле они должны быть. Если нужно, я могу дать полный файл со всем.
+# ========== СОН ==========
+@dp.message_handler(text="🛌 Сон")
+async def sleep_start(message: types.Message, state: FSMContext):
+    if db.has_sleep_today(message.from_user.id):
+        await send_temp_message(message.chat.id, "🛌 Сон за сегодня уже записан.", 3)
+        return
+    await SleepStates.bed_time.set()
+    await edit_or_send(state, message.chat.id, "Во сколько лёг спать?", get_time_buttons(), edit=False)
+
+@dp.message_handler(state=SleepStates.bed_time)
+async def sleep_bed_time(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    if message.text == "Другое":
+        await send_temp_message(message.chat.id, "Введи время в формате ЧЧ:ММ, например 23:45", 3)
+        return
+    if not is_valid_time_text(message.text):
+        await send_temp_message(message.chat.id, "❌ Укажи время в формате ЧЧ:ММ", 3)
+        return
+    await state.update_data(bed_time=message.text)
+    await SleepStates.wake_time.set()
+    await edit_or_send(state, message.chat.id, "Во сколько проснулся?", get_morning_time_buttons(), edit=True)
+
+@dp.message_handler(state=SleepStates.wake_time)
+async def sleep_wake_time(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    if message.text == "Другое":
+        await send_temp_message(message.chat.id, "Введи время в формате ЧЧ:ММ, например 07:30", 3)
+        return
+    if not is_valid_time_text(message.text):
+        await send_temp_message(message.chat.id, "❌ Укажи время в формате ЧЧ:ММ", 3)
+        return
+    await state.update_data(wake_time=message.text)
+    await SleepStates.quality.set()
+    await edit_or_send(state, message.chat.id, "Оцени качество сна (1–10):", get_energy_stress_buttons(), edit=True)
+
+@dp.message_handler(state=SleepStates.quality)
+async def sleep_quality(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    if not is_valid_score_text(message.text):
+        await send_temp_message(message.chat.id, "❌ Оценка должна быть от 1 до 10", 3)
+        return
+    await state.update_data(quality=int(message.text))
+    await SleepStates.woke_night.set()
+    await edit_or_send(state, message.chat.id, "Просыпался ночью?", get_yes_no_buttons(), edit=True)
+
+@dp.message_handler(state=SleepStates.woke_night)
+async def sleep_woke_night(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    if message.text not in ("✅ Да", "❌ Нет"):
+        await send_temp_message(message.chat.id, "❌ Выбери ответ кнопками", 3)
+        return
+    await state.update_data(woke_night=(message.text == "✅ Да"))
+    await SleepStates.note.set()
+    await edit_or_send(state, message.chat.id, "Заметка по сну? (можно пропустить)", get_skip_markup_text(), edit=True)
+
+@dp.message_handler(state=SleepStates.note)
+async def sleep_note(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    data = await state.get_data()
+    note = "" if message.text == "Пропустить" else message.text
+    saved = db.add_sleep(
+        message.from_user.id,
+        data.get("bed_time"),
+        data.get("wake_time"),
+        data.get("quality"),
+        data.get("woke_night"),
+        note
+    )
+    await delete_dialog_message(state)
+    await state.finish()
+    if saved:
+        await send_temp_message(message.chat.id, "✅ Сон сохранён!", 2)
+    else:
+        await send_temp_message(message.chat.id, "🛌 Сон за сегодня уже записан.", 3)
+    await message.answer("Главное меню", reply_markup=get_main_menu())
+
+# ========== ЧЕК-ИН ==========
+@dp.message_handler(text="⚡️ Чек-ин")
+async def checkin_start(message: types.Message, state: FSMContext):
+    await CheckinStates.energy.set()
+    await edit_or_send(state, message.chat.id, "Оцени уровень энергии (1–10):", get_energy_stress_buttons(), edit=False)
+
+@dp.message_handler(state=CheckinStates.energy)
+async def checkin_energy(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    if not is_valid_score_text(message.text):
+        await send_temp_message(message.chat.id, "❌ Оценка должна быть от 1 до 10", 3)
+        return
+    await state.update_data(energy=int(message.text))
+    await CheckinStates.stress.set()
+    await edit_or_send(state, message.chat.id, "Оцени уровень стресса (1–10):", get_energy_stress_buttons(), edit=True)
+
+@dp.message_handler(state=CheckinStates.stress)
+async def checkin_stress(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    if not is_valid_score_text(message.text):
+        await send_temp_message(message.chat.id, "❌ Оценка должна быть от 1 до 10", 3)
+        return
+    await state.update_data(stress=int(message.text), emotions=[])
+    await CheckinStates.emotions.set()
+    await edit_or_send(state, message.chat.id, "Выбери эмоции (можно несколько), затем нажми «✅ Готово»", get_emotion_buttons(), edit=True)
+
+@dp.message_handler(state=CheckinStates.emotions)
+async def checkin_emotions(message: types.Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await safe_finish(state, message)
+        return
+    data = await state.get_data()
+    emotions = data.get("emotions", [])
+    if message.text == "⬅️ Назад":
+        await CheckinStates.stress.set()
+        await edit_or_send(state, message.chat.id, "Оцени уровень стресса (1–10):", get_energy_stress_buttons(), edit=True)
+        return
+    if message.text == "✍️ Своя":
+        await send_temp_message(message.chat.id, "Напиши свою эмоцию текстом, затем нажми «✅ Готово».", 4)
+        return
+    if message.text == "✅ Готово":
+        await CheckinStates.note.set()
+        await edit_or_send(state, message.chat.id, "Короткая заметка? (можно пропустить)", get_skip_markup_text(), edit=True)
+        return
+    if message.text not in emotions:
+        emotions.append(message.text)
+        await state.update_data(emotions=emotions)
+    await send_temp_message(message.chat.id, f"Добавлено эмоций: {len(emotions)}", 2)
+
+@dp.message_handler(state=CheckinStates.note)
+async def checkin_note(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    data = await state.get_data()
+    note = "" if message.text == "Пропустить" else message.text
+    db.add_checkin(
+        message.from_user.id,
+        "manual",
+        data.get("energy"),
+        data.get("stress"),
+        data.get("emotions", []),
+        note
+    )
+    await delete_dialog_message(state)
+    await state.finish()
+    await send_temp_message(message.chat.id, "✅ Чек-ин сохранён!", 2)
+    await message.answer("Главное меню", reply_markup=get_main_menu())
+
+# ========== ИТОГ ДНЯ ==========
+@dp.message_handler(text="📝 Итог дня")
+async def day_summary_start(message: types.Message, state: FSMContext):
+    target_date = db.get_target_date_for_summary(message.from_user.id)
+    if target_date is None:
+        await send_temp_message(message.chat.id, "🕕 Итог дня доступен с 18:00 до 06:00 по твоему часовому поясу.", 4)
+        return
+    if db.has_day_summary_for_date(message.from_user.id, target_date):
+        await send_temp_message(message.chat.id, f"📝 Итог за {target_date} уже сохранён.", 4)
+        return
+    await DaySummaryStates.score.set()
+    await edit_or_send(state, message.chat.id, "Как прошёл день? Оценка от 1 до 10:", get_energy_stress_buttons(), edit=False)
+
+@dp.message_handler(state=DaySummaryStates.score)
+async def summary_score(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    if not is_valid_score_text(message.text):
+        await send_temp_message(message.chat.id, "❌ Оценка должна быть от 1 до 10", 3)
+        return
+    await state.update_data(score=int(message.text))
+    await DaySummaryStates.best.set()
+    await edit_or_send(state, message.chat.id, "Что было лучшим за день?", get_skip_markup_text(), edit=True)
+
+@dp.message_handler(state=DaySummaryStates.best)
+async def summary_best(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    best = message.text if message.text != "Пропустить" else ""
+    await state.update_data(best=best)
+    await DaySummaryStates.worst.set()
+    await edit_or_send(state, message.chat.id, "Что было самым сложным?", get_skip_markup_text(), edit=True)
+
+@dp.message_handler(state=DaySummaryStates.worst)
+async def summary_worst(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    worst = message.text if message.text != "Пропустить" else ""
+    await state.update_data(worst=worst)
+    await DaySummaryStates.gratitude.set()
+    await edit_or_send(state, message.chat.id, "За что благодарен?", get_skip_markup_text(), edit=True)
+
+@dp.message_handler(state=DaySummaryStates.gratitude)
+async def summary_gratitude(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    gratitude = message.text if message.text != "Пропустить" else ""
+    await state.update_data(gratitude=gratitude)
+    await DaySummaryStates.note.set()
+    await edit_or_send(state, message.chat.id, "Заметка? (можно пропустить)", get_skip_markup_text(), edit=True)
+
+@dp.message_handler(state=DaySummaryStates.note)
+async def summary_note(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    data = await state.get_data()
+    note = "" if message.text == "Пропустить" else message.text
+    success = db.add_day_summary(
+        message.from_user.id,
+        data["score"],
+        data["best"],
+        data["worst"],
+        data["gratitude"],
+        note
+    )
+    await delete_dialog_message(state)
+    await state.finish()
+    if success:
+        await send_temp_message(message.chat.id, "✅ Итог дня сохранён!", 2)
+    else:
+        await send_temp_message(message.chat.id, "❌ Не удалось сохранить итог дня.", 3)
+    await message.answer("Главное меню", reply_markup=get_main_menu())
+
+# ========== ЕДА И НАПИТКИ ==========
+@dp.message_handler(text="🍽🥤 Еда и напитки")
+async def food_drink_menu(message: types.Message):
+    await message.answer("🍽🥤 Еда и напитки\n\nВыбери действие:", reply_markup=get_food_drink_menu())
+
+@dp.message_handler(text="➕ Добавить еду/напитки")
+async def add_food_drink_start(message: types.Message, state: FSMContext):
+    await FoodDrinkStates.type.set()
+    await edit_or_send(state, message.chat.id, "Что хочешь добавить?", get_food_drink_type_buttons(), edit=False)
+
+@dp.message_handler(state=FoodDrinkStates.type)
+async def add_food_drink_type(message: types.Message, state: FSMContext):
+    if message.text == "⬅️ Назад":
+        await safe_finish(state, message)
+        await food_drink_menu(message)
+        return
+    if message.text == "🍽 Еда":
+        await state.finish()
+        await FoodStates.meal_type.set()
+        await edit_or_send(state, message.chat.id, "Что это за прием?", get_meal_type_buttons(), edit=False)
+    elif message.text == "🥤 Напитки":
+        await state.finish()
+        await DrinkStates.drink_type.set()
+        await edit_or_send(state, message.chat.id, "Что выпил?", get_drink_type_buttons(), edit=False)
+    else:
+        await edit_or_send(state, message.chat.id, "Выбери из предложенных вариантов.", get_food_drink_type_buttons(), edit=True)
+
+@dp.message_handler(text="📋 Посмотреть сегодня")
+async def view_food_drink_today(message: types.Message):
+    items = db.get_today_food_and_drinks(message.from_user.id)
+    if not items:
+        await message.answer("🍽🥤 За сегодня ещё нет записей о еде и напитках.", reply_markup=get_food_drink_menu())
+        return
+    text = "🍽🥤 *Еда и напитки сегодня:*\n\n"
+    for item in items:
+        text += f"🕐 {item['time']} — {item['type']}: {item['text']}\n"
+    await message.answer(text, parse_mode="Markdown", reply_markup=get_food_drink_menu())
+
+@dp.message_handler(state=FoodStates.meal_type)
+async def food_meal_type(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    await state.update_data(meal_type=message.text)
+    await FoodStates.next()
+    await edit_or_send(state, message.chat.id, "Что съел?", get_back_button(), edit=True)
+
+@dp.message_handler(state=FoodStates.food_text)
+async def food_text(message: types.Message, state: FSMContext):
+    if message.text in ("⬅️ Назад", "❌ Отмена"):
+        await safe_finish(state, message, "Добавление отменено")
+        return
+    data = await state.get_data()
+    db.add_food(message.from_user.id, data["meal_type"], message.text)
+    await delete_dialog_message(state)
+    await state.finish()
+    await send_temp_message(message.chat.id, f"✅ Добавлено: {data['meal_type']} — {message.text}", 2)
+    await message.answer("Главное меню", reply_markup=get_main_menu())
+
+@dp.message_handler(state=DrinkStates.drink_type)
+async def drink_type(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    await state.update_data(drink_type=message.text)
+    await DrinkStates.amount.set()
+    await edit_or_send(state, message.chat.id, "Сколько?", get_drink_amount_buttons(), edit=True)
+
+@dp.message_handler(state=DrinkStates.amount)
+async def drink_amount(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+    if message.text == "Другое":
+        await state.update_data(awaiting_custom_drink_amount=True)
+        await edit_or_send(state, message.chat.id, "Введи количество (например: 0.5 л, 2 стакана):", get_back_button(), edit=True)
+        return
+    data = await state.get_data()
+    if data.get("awaiting_custom_drink_amount"):
+        if not message.text.strip():
+            await edit_or_send(state, message.chat.id, "❌ Введи количество напитка текстом.", get_back_button(), edit=True)
+            return
+        await state.update_data(awaiting_custom_drink_amount=False)
+    drink_type = data["drink_type"]
+    amount = message.text
+    db.add_drink(message.from_user.id, drink_type, amount)
+    await delete_dialog_message(state)
+    await state.finish()
+    await send_temp_message(message.chat.id, f"✅ Добавлено: {drink_type} — {amount}", 2)
+    await message.answer("Главное меню", reply_markup=get_main_menu())
 
 # ========== ЗАМЕТКИ И НАПОМИНАНИЯ ==========
 @dp.message_handler(text="📝 Заметки и напоминания")
@@ -533,7 +857,6 @@ async def note_copy(callback: types.CallbackQuery):
     if not note:
         await callback.answer("Заметка не найдена", show_alert=True)
         return
-    
     await bot.send_message(callback.from_user.id, f"📋 *Скопированная заметка:*\n\n{note['text']}", parse_mode="Markdown")
     await callback.answer("✅ Заметка скопирована и отправлена тебе в чат!", show_alert=True)
 
@@ -652,7 +975,6 @@ async def reminder_cancel(callback: types.CallbackQuery):
 @dp.message_handler(text="🤖 AI-совет")
 async def ai_advice_start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    # Собираем данные пользователя
     user_data = {
         "sleep": db._load_json(user_id, "sleep.json"),
         "checkins": db._load_json(user_id, "checkins.json"),
@@ -688,7 +1010,6 @@ async def ai_question(message: types.Message, state: FSMContext):
         return
 
     if not ai_advisor.get_user_data(user_id):
-        # Если нет в кэше, загружаем
         user_data = {
             "sleep": db._load_json(user_id, "sleep.json"),
             "checkins": db._load_json(user_id, "checkins.json"),
@@ -705,8 +1026,289 @@ async def ai_question(message: types.Message, state: FSMContext):
         parse_mode="Markdown"
     )
 
-# ========== ОСТАЛЬНЫЕ ОБРАБОТЧИКИ (СТАТИСТИКА, ЭКСПОРТ, КОНВЕРТЕР, НАСТРОЙКИ) ==========
-# Они остаются как в твоём исходном коде. Я их здесь не дублирую, но в полном файле они должны быть.
+# ========== СТАТИСТИКА ==========
+@dp.message_handler(text="📊 Статистика")
+async def stats(message: types.Message):
+    text = db.get_stats(message.from_user.id)
+    await message.answer(text, reply_markup=get_main_menu())
+
+# ========== ЭКСПОРТ ==========
+@dp.message_handler(text="📤 Экспорт")
+async def export_menu(message: types.Message):
+    await message.answer("Выбери, что хочешь экспортировать:", reply_markup=get_export_menu())
+
+@dp.message_handler(text="📥 Экспорт всех данных")
+async def export_all_data(message: types.Message):
+    file_path = db.export_all(message.from_user.id)
+    with open(file_path, 'rb') as f:
+        await message.answer_document(f, caption="📁 Вот все твои данные")
+    await message.answer("Главное меню", reply_markup=get_main_menu())
+
+@dp.message_handler(text=["🎵 SoundCloud", "📌 Pinterest (видео)", "🌐 Другой URL"])
+async def export_any_start(message: types.Message, state: FSMContext):
+    await ExportStates.url.set()
+    if message.text == "🌐 Другой URL":
+        await edit_or_send(state, message.chat.id, "📎 Отправь ссылку на трек или плейлист (YouTube, SoundCloud, VK, Spotify и др.):", get_back_button(), edit=False)
+    else:
+        await edit_or_send(state, message.chat.id, f"📎 Отправь ссылку на трек или плейлист {message.text}:", get_back_button(), edit=False)
+
+@dp.message_handler(state=ExportStates.url)
+async def export_any_url(message: types.Message, state: FSMContext):
+    if message.text == "⬅️ Назад":
+        await safe_finish(state, message)
+        await export_menu(message)
+        return
+    url = message.text.strip()
+    if not is_valid_url(url):
+        await send_temp_message(message.chat.id, "❌ Это не похоже на ссылку. Пожалуйста, отправь корректный URL (начинающийся с http:// или https://).", 4)
+        await edit_or_send(state, message.chat.id, "📎 Отправь ссылку на трек или плейлист:", get_back_button(), edit=True)
+        return
+    await state.update_data(url=url)
+    await ExportStates.format.set()
+    await edit_or_send(state, message.chat.id, "Выбери формат:", reply_markup=get_download_formats_keyboard(source="unknown"), edit=True)
+
+@dp.message_handler(state=ExportStates.format)
+async def export_any_format(message: types.Message, state: FSMContext):
+    if message.text == "⬅️ Назад":
+        await safe_finish(state, message)
+        await export_menu(message)
+        return
+    fmt = message.text
+    allowed_formats = {"MP3 (аудио)", "WAV (аудио)", "MP4 (видео)", "Лучшее качество (оригинал)"}
+    if fmt not in allowed_formats:
+        await send_temp_message(message.chat.id, "❌ Выбери формат только кнопками.", 3)
+        await edit_or_send(state, message.chat.id, "Выбери формат:", get_download_formats_keyboard(), edit=True)
+        return
+    data = await state.get_data()
+    url = data.get('url')
+    if not url:
+        await safe_finish(state, message, "Ошибка: ссылка не найдена. Начни заново.")
+        return
+    await delete_dialog_message(state)
+    await state.finish()
+
+    progress_msg = await message.answer("⏳ Начинаю скачивание...")
+
+    try:
+        filename, title = await download_media_with_ytdlp(url, fmt, progress_msg)
+        if not filename or not os.path.exists(filename):
+            raise Exception("Скачанный файл не найден после завершения загрузки.")
+
+        await bot.edit_message_text("✅ Скачивание завершено! Отправляю файл...", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
+        file_size = os.path.getsize(filename)
+        if file_size > 50 * 1024 * 1024:
+            raise Exception("Файл слишком большой для отправки в Telegram (более 50 MB).")
+        with open(filename, 'rb') as f:
+            await message.answer_document(f, caption=f"🎵 {title}")
+        safe_remove_file(filename)
+        await safe_delete_message_obj(progress_msg)
+    except Exception as e:
+        logging.error(f"Ошибка загрузки: {e}")
+        error_msg = str(e)
+        if "Sign in to confirm you’re not a bot" in error_msg:
+            await bot.edit_message_text(
+                "❌ YouTube временно блокирует запросы. Попробуйте:\n"
+                "• Подождать 10–15 минут\n"
+                "• Использовать другой источник (SoundCloud, VK)\n"
+                "• Скачать позже, когда нагрузка снизится",
+                chat_id=progress_msg.chat.id, message_id=progress_msg.message_id
+            )
+        else:
+            await bot.edit_message_text(f"❌ Ошибка: {error_msg[:200]}\nПроверь ссылку и попробуй снова.", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
+        await asyncio.sleep(3)
+        await safe_delete_message_obj(progress_msg)
+    await message.answer("Главное меню", reply_markup=get_main_menu())
+
+# ========== КОНВЕРТЕР ==========
+@dp.message_handler(text="🔄 Конвертер")
+async def converter_menu(message: types.Message, state: FSMContext):
+    await ConverterStates.file.set()
+    m = await message.answer("Отправь мне файл (видео, аудио, изображение), который хочешь конвертировать.", reply_markup=get_back_button())
+    await state.update_data(msg_id=m.message_id, chat_id=m.chat.id)
+
+@dp.message_handler(state=ConverterStates.file, content_types=types.ContentTypes.TEXT)
+async def converter_file_text(message: types.Message, state: FSMContext):
+    if message.text == "⬅️ Назад":
+        await safe_finish(state, message)
+        return
+    await send_temp_message(message.chat.id, "❌ Отправь файл или нажми «Назад».", 3)
+
+@dp.message_handler(content_types=['document', 'video', 'audio'], state=ConverterStates.file)
+async def converter_file(message: types.Message, state: FSMContext):
+    if not (message.document or message.video or message.audio):
+        await send_temp_message(message.chat.id, "❌ Неподдерживаемый тип файла. Пожалуйста, отправь документ, видео или аудио.", 3)
+        return
+    if message.document:
+        file_id = message.document.file_id
+        file_name = message.document.file_name or f"{message.document.file_unique_id}.bin"
+    elif message.video:
+        file_id = message.video.file_id
+        file_name = f"{message.video.file_unique_id}.mp4"
+    elif message.audio:
+        file_id = message.audio.file_id
+        file_name = f"{message.audio.file_unique_id}.mp3"
+    else:
+        await send_temp_message(message.chat.id, "❌ Неподдерживаемый тип файла.", 3)
+        return
+
+    try:
+        file = await bot.get_file(file_id)
+        downloaded_file = await bot.download_file(file.file_path)
+        input_ext = os.path.splitext(file_name)[1] or ".bin"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=input_ext, dir="/tmp") as tmp_file:
+            tmp_file.write(downloaded_file.getvalue())
+            temp_input = tmp_file.name
+        await state.update_data(input_path=temp_input)
+        await delete_dialog_message(state)
+        m = await message.answer("Выбери целевой формат:", reply_markup=get_converter_formats_keyboard())
+        await state.update_data(msg_id=m.message_id, chat_id=m.chat.id)
+        await ConverterStates.format.set()
+    except Exception as e:
+        logging.error(f"Ошибка при получении файла: {e}")
+        await send_temp_message(message.chat.id, "❌ Не удалось загрузить файл. Попробуй ещё раз.", 3)
+        await safe_finish(state, message)
+
+@dp.message_handler(state=ConverterStates.format)
+async def converter_format(message: types.Message, state: FSMContext):
+    if message.text == "⬅️ Назад":
+        await safe_finish(state, message)
+        return
+    fmt = message.text.upper()
+    allowed_formats = ["MP4", "GIF", "MP3", "WEBM"]
+    if fmt not in allowed_formats:
+        await send_temp_message(message.chat.id, f"❌ Неверный формат. Выбери из кнопок: {', '.join(allowed_formats)}", 3)
+        return
+    data = await state.get_data()
+    input_path = data.get('input_path')
+    if not input_path or not os.path.exists(input_path):
+        await send_temp_message(message.chat.id, "❌ Файл не найден. Попробуй ещё раз.", 3)
+        await safe_finish(state, message)
+        return
+    await delete_dialog_message(state)
+    await state.finish()
+
+    spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+    progress_msg = await message.answer(f"⏳ Конвертирую... {spinner[0]}")
+
+    async def update_spinner():
+        i = 0
+        while True:
+            await asyncio.sleep(0.3)
+            i = (i + 1) % len(spinner)
+            try:
+                await bot.edit_message_text(f"⏳ Конвертирую... {spinner[i]}", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
+            except:
+                break
+
+    spinner_task = asyncio.create_task(update_spinner())
+    output_path = None
+
+    try:
+        ffmpeg_path = os.path.join(os.getcwd(), 'ffmpeg')
+        if not os.path.exists(ffmpeg_path):
+            ffmpeg_path = 'ffmpeg'
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{fmt.lower()}", dir="/tmp") as tmp_out:
+            output_path = tmp_out.name
+        cmd = [ffmpeg_path, '-i', input_path, output_path]
+        if fmt == "GIF":
+            cmd = [ffmpeg_path, '-i', input_path, '-vf', 'scale=640:-1:flags=lanczos,fps=15,split[s0][s1];[s0]palettegen=max_colors=256[p];[s1][p]paletteuse', '-loop', '0', output_path]
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await process.communicate()
+        if process.returncode != 0:
+            error_msg = stderr.decode("utf-8", errors="ignore").strip()[:200]
+            raise Exception(f"ffmpeg error: {error_msg}")
+
+        file_size = os.path.getsize(output_path)
+        max_size = 50 * 1024 * 1024
+        if file_size > max_size:
+            raise Exception(f"File too large: {file_size / (1024*1024):.1f} MB > 50 MB limit. Try a different format (MP4 or WEBM may be smaller) or reduce resolution manually.")
+
+        spinner_task.cancel()
+        try:
+            await spinner_task
+        except asyncio.CancelledError:
+            pass
+        await bot.edit_message_text("✅ Конвертация завершена! Отправляю файл...", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
+        with open(output_path, 'rb') as f:
+            await message.answer_document(f, caption=f"✅ Конвертировано в {fmt.upper()}")
+        safe_remove_file(input_path)
+        safe_remove_file(output_path)
+        await safe_delete_message_obj(progress_msg)
+    except Exception as e:
+        logging.error(f"Ошибка конвертации: {e}")
+        spinner_task.cancel()
+        try:
+            await spinner_task
+        except asyncio.CancelledError:
+            pass
+        error_msg = str(e)
+        if "File too large" in error_msg:
+            await bot.edit_message_text(f"❌ {error_msg}", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
+        else:
+            await bot.edit_message_text(f"❌ Ошибка конвертации: {error_msg}\nПопробуй другой файл или формат.", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
+        await asyncio.sleep(3)
+        await safe_delete_message_obj(progress_msg)
+    finally:
+        safe_remove_file(input_path)
+        safe_remove_file(output_path)
+    await message.answer("Главное меню", reply_markup=get_main_menu())
+
+# ========== НАСТРОЙКИ ==========
+@dp.message_handler(text="⚙️ Настройки")
+async def settings(message: types.Message):
+    await message.answer(
+        "⚙️ Настройки\n\n"
+        "Выбери действие:",
+        reply_markup=get_settings_menu()
+    )
+
+@dp.message_handler(text="🌍 Сменить город")
+async def change_city(message: types.Message):
+    await message.answer(
+        "Выбери свой город или введи смещение вручную:",
+        reply_markup=get_timezone_buttons()
+    )
+    await TimezoneStates.city.set()
+
+@dp.message_handler(text="🔄 Сброс данных")
+async def reset_request(message: types.Message):
+    await message.answer(
+        "⚠️ ВНИМАНИЕ! Это действие удалит ВСЕ твои данные (сон, чек-ины, еду, мысли и т.д.).\n\n"
+        "Ты уверен?",
+        reply_markup=get_reset_confirm_keyboard()
+    )
+
+@dp.message_handler(text="⬅️ Назад")
+async def back_from_settings(message: types.Message):
+    await message.answer("Главное меню", reply_markup=get_main_menu())
+
+@dp.callback_query_handler(lambda c: c.data == "reset_confirm")
+async def reset_confirm(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    success = db.reset_user_data(user_id)
+    if success:
+        await callback_query.message.edit_text("✅ Все твои данные удалены.")
+    else:
+        await callback_query.message.edit_text("❌ Не удалось удалить данные (возможно, их и не было).")
+    await callback_query.answer()
+    await asyncio.sleep(1)
+    await callback_query.message.answer(
+        "✅ Полный сброс данных выполнен."
+        "\nЯ перезапускаю приветственный сценарий как после /start."
+    )
+    await show_start_flow(callback_query.from_user.id, callback_query.message.chat.id)
+
+@dp.callback_query_handler(lambda c: c.data == "reset_cancel")
+async def reset_cancel(callback_query: types.CallbackQuery):
+    await callback_query.message.edit_text("❌ Сброс отменён.")
+    await callback_query.answer()
+    await asyncio.sleep(2)
+    await callback_query.message.delete()
+    await callback_query.message.answer("Главное меню", reply_markup=get_main_menu())
 
 # ========== УВЕДОМЛЕНИЯ И ЗАПУСК ==========
 scheduler = None
