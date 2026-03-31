@@ -276,7 +276,9 @@ async def timezone_city(message: types.Message, state: FSMContext):
         db.set_user_timezone(message.from_user.id, CITY_TO_OFFSET[message.text])
         await delete_dialog_message(state)
         await state.finish()
-        await message.answer("✅ Часовой пояс сохранён.", reply_markup=get_main_menu())
+        await message.answer(     "✅ Часовой пояс сохранён.
+
+🔔 Хочешь включить напоминания?",     reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("✅ Да", "❌ Нет") ) await ReminderSetupStates.ask.set()
         return
 
     await message.answer("Выбери город из кнопок или нажми «Другое».", reply_markup=get_timezone_buttons())
@@ -310,7 +312,9 @@ async def timezone_offset(message: types.Message, state: FSMContext):
     db.set_user_timezone(message.from_user.id, offset)
     await delete_dialog_message(state)
     await state.finish()
-    await message.answer("✅ Часовой пояс сохранён.", reply_markup=get_main_menu())
+    await message.answer(     "✅ Часовой пояс сохранён.
+
+🔔 Хочешь включить напоминания?",     reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("✅ Да", "❌ Нет") ) await ReminderSetupStates.ask.set()
 
 # ========== СОН ==========
 @dp.message_handler(text="🛌 Сон")
