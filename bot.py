@@ -1512,3 +1512,22 @@ async def on_shutdown(dp):
 
 if __name__ == "__main__":
     executor.start_polling(dp, on_startup=on_startup, on_shutdown=on_shutdown)
+# ========== ПРОСТОЙ HTTP-СЕРВЕР ДЛЯ HEALTHCHECK ==========
+import asyncio
+from aiohttp import web
+
+async def healthcheck(request):
+    return web.Response(text="OK")
+
+async def run_http_server():
+    port = int(os.environ.get("PORT", 10000))
+    app = web.Application()
+    app.router.add_get("/", healthcheck)
+    app.router.add_get("/health", healthcheck)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    print(f"🌐 Healthcheck сервер запущен на порту {port}")
+    # Бесконечно ждем
+    await asyncio.Event().wait()
