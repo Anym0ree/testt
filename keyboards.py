@@ -128,6 +128,7 @@ def get_reminder_advance_buttons():
         [KeyboardButton(text="⏰ За 1 день")],
         [KeyboardButton(text="⏳ За 3 часа")],
         [KeyboardButton(text="⌛ За 1 час")],
+        [KeyboardButton(text="✏️ Своё время")],
         [KeyboardButton(text="🚫 Не надо")],
         [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отмена")]
     ]
