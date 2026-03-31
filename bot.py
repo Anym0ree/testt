@@ -831,7 +831,7 @@ async def list_notes(message: types.Message, state: FSMContext):
     for i, note in enumerate(visible, 1):
         note_text = note['text'][:60] + "..." if len(note['text']) > 60 else note['text']
         text += f"{i}. {note_text}\n   📅 {note.get('date','-')} {note.get('time','')}\n\n"
-    text += "\n✏️ *Команды:*\n`копировать (номер заметки)` — скопировать текст заметки\n`удалить (номер заметки)` — удалить заметку"
+    text += "\n✏️ *Команды:*\n`копировать 3` — скопировать текст заметки\n`удалить 2` — удалить заметку"
     await message.answer(text, parse_mode="Markdown", reply_markup=get_notes_reminders_main_menu())
 
 @dp.message_handler(regexp=r'^копировать\s+(\d+)$')
@@ -883,7 +883,7 @@ async def list_reminders(message: types.Message, state: FSMContext):
     for i, r in enumerate(reminders, 1):
         marker = "🔔" if r.get("parent_id") else "⏰"
         text += f"{i}. {marker} {r['date']} {r['time']} — {r['text'][:50]}\n"
-    text += "\n🗑 *Команда:*\n`удалить (номер напоминания)` — удалить напоминание (вместе с доп. напоминанием)"
+    text += "\n🗑 *Команда:*\n`удалить 3` — удалить напоминание (вместе с доп. напоминанием)"
     await message.answer(text, parse_mode="Markdown", reply_markup=get_notes_reminders_main_menu())
 
 @dp.message_handler(regexp=r'^удалить\s+(\d+)$')
