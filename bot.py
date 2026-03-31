@@ -1493,10 +1493,16 @@ async def check_reminders():
 
 from web import start_web, stop_web
 
+
 async def on_startup(dp):
     global scheduler
+    # Удаляем вебхук перед стартом поллинга — это важно!
     await bot.delete_webhook(drop_pending_updates=True)
-    await asyncio.sleep(1)  # ждём, чтобы Telegram обработал сброс
+    await asyncio.sleep(1)  # небольшая пауза, чтобы Telegram обработал
+    
+    # Запускаем HTTP-сервер для healthcheck в фоне
+    asyncio.create_task(run_http_server())
+    
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
     scheduler.add_job(check_custom_reminders, IntervalTrigger(minutes=1))
