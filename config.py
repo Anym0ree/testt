@@ -1,7 +1,7 @@
 import os
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-DATA_FOLDER = "user_data"
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 if not os.path.exists(DATA_FOLDER):
     os.makedirs(DATA_FOLDER)
