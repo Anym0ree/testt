@@ -133,10 +133,9 @@ def get_reminder_advance_buttons():
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
-def get_settings_menu():
+def get_settings_menu_no_reset():
     buttons = [
         [KeyboardButton(text="🌍 Сменить город")],
-        [KeyboardButton(text="🔄 Сброс данных")],
         [KeyboardButton(text="⬅️ Назад")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
