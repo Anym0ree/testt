@@ -1200,7 +1200,36 @@ async def converter_format(message: types.Message, state: FSMContext):
         safe_remove_file(input_path)
         safe_remove_file(output_path)
     await message.answer("Главное меню", reply_markup=get_main_menu())
+@dp.message_handler(text="🤖 AI-совет")
+async def ai_advice_start(message: types.Message, state: FSMContext):
+    # Собираем все данные пользователя из БД
+    user_id = message.from_user.id
+    user_data = {
+        "sleep": db._load_json(user_id, "sleep.json"),
+        "checkins": db._load_json(user_id, "checkins.json"),
+        "day_summary": db._load_json(user_id, "day_summary.json"),
+        "notes": db._load_json(user_id, "notes.json"),
+        "reminders": db._load_json(user_id, "reminders.json"),
+    }
+    # Сохраняем в кэш AI-советника
+    ai_advisor.set_user_data(user_id, user_data)
 
+    await AIState.waiting_question.set()
+    await message.answer(
+        "🤖 *Загружаю ваши данные для анализа...*",
+        parse_mode="Markdown"
+    )
+    # Получаем первый совет
+    advice = await ai_advisor.get_advice(user_id)
+    await message.answer(
+        f"🤖 *Совет AI:*\n\n{advice}",
+        parse_mode="Markdown",
+        reply_markup=get_back_button()
+    )
+    await message.answer(
+        "✏️ *Вы можете задать уточняющий вопрос* или написать /cancel для выхода.",
+        parse_mode="Markdown"
+    )
 # ========== НАСТРОЙКИ ==========
 @dp.message_handler(text="⚙️ Настройки")
 async def settings(message: types.Message):
