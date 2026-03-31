@@ -67,12 +67,11 @@ def get_note_action_keyboard(note_id):
     buttons = [
         [InlineKeyboardButton(text="📋 Копировать", callback_data=f"note_copy_{note_id}")],
         [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"note_del_{note_id}")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="note_cancel")]   # было note_back_to_list
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="note_cancel")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_confirm_delete_keyboard(item_type, item_id):
-    """Клавиатура для подтверждения удаления"""
     buttons = [
         [
             InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"{item_type}_confirm_del_{item_id}"),
