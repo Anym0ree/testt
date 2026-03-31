@@ -225,12 +225,12 @@ class Database:
         return False
 
     # === НАПОМИНАНИЯ ===
-    def add_reminder(self, user_id, text, target_date, target_time, advance_type=None):
+    def add_reminder(self, user_id, text, target_date, target_time, advance_type=None, parent_id=None, is_custom=False):
         local_dt = self.get_user_local_datetime(user_id)
         target_dt = datetime.strptime(f"{target_date} {target_time}", "%Y-%m-%d %H:%M")
         if target_dt < local_dt:
             return None
-
+    
         reminders = self._load_json(user_id, "reminders.json")
         reminder_id = max([r.get("id", 0) for r in reminders], default=0) + 1
         reminder = {
@@ -238,32 +238,20 @@ class Database:
             "text": text,
             "date": target_date,
             "time": target_time,
-            "advance_type": advance_type,
             "is_active": True,
             "created_at": datetime.utcnow().isoformat()
         }
+        if parent_id:
+            reminder["parent_id"] = parent_id
+            if is_custom:
+                reminder["is_custom"] = True
+        else:
+            reminder["advance_type"] = advance_type
+    
         reminders.append(reminder)
         self._save_json(user_id, "reminders.json", reminders)
-
-        if advance_type:
-            adv_dt = self._get_advance_datetime(target_date, target_time, advance_type)
-            if adv_dt >= local_dt:
-                advance_reminder = {
-                    "id": max([r.get("id", 0) for r in reminders], default=0) + 1,
-                    "text": f"⚠️ ЗА ДЕНЬ: {text}" if advance_type == "day" else f"⚠️ ЗА 3 ЧАСА: {text}" if advance_type == "3h" else f"⚠️ ЗА 1 ЧАС: {text}",
-                    "date": adv_dt.strftime("%Y-%m-%d"),
-                    "time": adv_dt.strftime("%H:%M"),
-                    "advance_type": None,
-                    "advance_kind": advance_type,
-                    "is_active": True,
-                    "parent_id": reminder_id,
-                    "created_at": datetime.utcnow().isoformat()
-                }
-                reminders.append(advance_reminder)
-                self._save_json(user_id, "reminders.json", reminders)
-
         return reminder_id
-
+    
     def _get_advance_datetime(self, target_date, target_time, advance_type):
         target = datetime.strptime(f"{target_date} {target_time}", "%Y-%m-%d %H:%M")
         if advance_type == "day":
