@@ -17,6 +17,9 @@ from config import BOT_TOKEN
 from database import db
 from keyboards import *
 from states import *
+from ai_advisor import AIAdvisor
+from config import OPENAI_API_KEY
+from states import AIState
 
 logging.basicConfig(level=logging.INFO)
 
