@@ -3,10 +3,5 @@ import os
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-if not os.path.exists(DATA_FOLDER):
-    os.makedirs(DATA_FOLDER)
-
-if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN is not set. Please export BOT_TOKEN before starting the bot.")
-# AI (OpenAI)
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")   # для AI-советника
+# Путь к папке с данными (создаётся автоматически)
+DATA_FOLDER = os.path.join(os.path.dirname(__file__), "data")  # или просто "data", если папка в корне
