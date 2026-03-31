@@ -65,3 +65,6 @@ class ConverterStates(StatesGroup):
 
 class AIState(StatesGroup):
     waiting_question = State()
+class ReminderSetupStates(StatesGroup):
+    ask = State()
+    choose_mode = State()
