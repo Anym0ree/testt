@@ -297,3 +297,12 @@ def get_converter_formats_keyboard():
         [KeyboardButton(text="⬅️ Назад")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+def get_confirm_delete_keyboard(item_type, item_id):
+    """Клавиатура для подтверждения удаления"""
+    buttons = [
+        [
+            InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"{item_type}_confirm_del_{item_id}"),
+            InlineKeyboardButton(text="❌ Отмена", callback_data=f"{item_type}_view_{item_id}")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
