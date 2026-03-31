@@ -24,6 +24,9 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
+# Константа для минимального времени до напоминания (2 минуты)
+MIN_DELTA = timedelta(minutes=2)
+
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 async def edit_or_send(state: FSMContext, user_id, text, keyboard=None, edit=True):
     data = await state.get_data()
@@ -724,171 +727,12 @@ async def reminder_minute(message: types.Message, state: FSMContext):
     if message.text not in ["00", "15", "30", "45"]:
         await edit_or_send(state, message.chat.id, "❌ Выбери минуты из кнопок: 00, 15, 30, 45", get_reminder_minute_buttons(), edit=True)
         return
-    await state.update_data(minute=message.text)
-    await ReminderStates.advance.set()
-    await edit_or_send(state, message.chat.id, "⏰ Нужно ли напомнить заранее?", get_reminder_advance_buttons(), edit=True)
-
-@dp.message_handler(state=ReminderStates.advance)
-async def reminder_advance(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await safe_finish(state, message)
-        await notes_reminders_main(message)
-        return
-    if message.text == "⬅️ Назад":
-        await ReminderStates.minute.set()
-        await edit_or_send(state, message.chat.id, "🕐 Выбери минуты:", get_reminder_minute_buttons(), edit=True)
-        return
-
-    advance_map = {
-        "⏰ За 1 день": "day",
-        "⏳ За 3 часа": "3h",
-        "⌛ За 1 час": "1h",
-        "🚫 Не надо": None
-    }
-    if message.text not in advance_map:
-        await edit_or_send(state, message.chat.id, "❌ Выбери вариант из кнопок.", get_reminder_advance_buttons(), edit=True)
-        return
-    advance_type = advance_map.get(message.text)
-
-    data = await state.get_data()
-    text = data["text"]
-    target_date = data["date"]
-    time_str = f"{data['hour']:02d}:{data['minute']}"
-
-    reminder_id = db.add_reminder(message.from_user.id, text, target_date, time_str, advance_type)
-    await delete_dialog_message(state)
-    await state.finish()
-    if reminder_id is None:
-        await send_temp_message(message.chat.id, "❌ Нельзя создать напоминание на прошедшее время.", 3)
-    else:
-        await send_temp_message(message.chat.id, f"✅ Напоминание добавлено!\n\n📝 {text}\n🕐 {target_date} {time_str}", 4)
-    await message.answer("Главное меню", reply_markup=get_main_menu())
-
-@dp.message_handler(text="📋 Мои записи")
-async def view_records(message: types.Message, state: FSMContext):
-    await state.finish()
-    await message.answer("Что хочешь посмотреть?", reply_markup=get_view_type_buttons())
-
-# ========== NOTE CREATION ==========
-
-@dp.message_handler(text="📝 Заметка")
-async def create_note_start(message: types.Message, state: FSMContext):
-    await NoteStates.text.set()
-    await edit_or_send(state, message.chat.id, "📝 Введи текст заметки:", get_back_button(), edit=False)
-
-@dp.message_handler(state=NoteStates.text)
-async def create_note_text(message: types.Message, state: FSMContext):
-    if message.text == "⬅️ Назад":
-        await safe_finish(state, message)
-        await notes_reminders_main(message)
-        return
-    db.add_note(message.from_user.id, message.text)
-    await delete_dialog_message(state)
-    await state.finish()
-    await send_temp_message(message.chat.id, "✅ Заметка сохранена!", 2)
-    await message.answer("Главное меню", reply_markup=get_main_menu())
-
-# ========== REMINDER CREATION ==========
-@dp.message_handler(text="⏰ Напоминание")
-async def create_reminder_start(message: types.Message, state: FSMContext):
-    await ReminderStates.text.set()
-    await edit_or_send(state, message.chat.id, "📝 Введи название напоминания:", get_back_button(), edit=False)
-
-@dp.message_handler(state=ReminderStates.text)
-async def reminder_text(message: types.Message, state: FSMContext):
-    if message.text == "⬅️ Назад":
-        await safe_finish(state, message)
-        await notes_reminders_main(message)
-        return
-    await state.update_data(text=message.text)
-    await ReminderStates.date.set()
-    await edit_or_send(state, message.chat.id, "📅 Выбери дату:", get_reminder_date_buttons(), edit=True)
-
-@dp.message_handler(state=ReminderStates.date)
-async def reminder_date(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await safe_finish(state, message)
-        await notes_reminders_main(message)
-        return
-    if message.text == "⬅️ Назад":
-        await ReminderStates.text.set()
-        await edit_or_send(state, message.chat.id, "📝 Введи название напоминания:", get_back_button(), edit=True)
-        return
-
-    today = datetime.now().date()
-    if message.text == "📅 Сегодня":
-        target_date = today
-    elif message.text == "📆 Завтра":
-        target_date = today + timedelta(days=1)
-    elif message.text == "📆 Послезавтра":
-        target_date = today + timedelta(days=2)
-    elif message.text == "🔢 Выбрать дату":
-        await edit_or_send(state, message.chat.id, "📅 Введи дату в формате: число месяц\n\nПримеры: 25 декабря, 1 января", get_back_button(), edit=True)
-        return
-    else:
-        try:
-            day_month = message.text.split()
-            day = int(day_month[0])
-            month_name = day_month[1]
-            month_map = {
-                "января": 1, "февраля": 2, "марта": 3, "апреля": 4,
-                "мая": 5, "июня": 6, "июля": 7, "августа": 8,
-                "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12
-            }
-            month = month_map.get(month_name.lower())
-            if not month:
-                raise ValueError
-            year = today.year
-            target_date = datetime(year, month, day).date()
-            if target_date < today:
-                target_date = datetime(year + 1, month, day).date()
-        except:
-            await edit_or_send(state, message.chat.id, "❌ Неверный формат. Введи дату как '25 декабря'", get_reminder_date_buttons(), edit=True)
-            return
-
-    await state.update_data(date=target_date.strftime("%Y-%m-%d"))
-    await ReminderStates.hour.set()
-    await edit_or_send(state, message.chat.id, "🕐 Выбери час:", get_reminder_hour_buttons(), edit=True)
-
-@dp.message_handler(state=ReminderStates.hour)
-async def reminder_hour(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await safe_finish(state, message)
-        await notes_reminders_main(message)
-        return
-    if message.text == "⬅️ Назад":
-        await ReminderStates.date.set()
-        await edit_or_send(state, message.chat.id, "📅 Выбери дату:", get_reminder_date_buttons(), edit=True)
-        return
-    try:
-        hour = int(message.text)
-        if 0 <= hour <= 23:
-            await state.update_data(hour=hour)
-            await ReminderStates.minute.set()
-            await edit_or_send(state, message.chat.id, "🕐 Выбери минуты:", get_reminder_minute_buttons(), edit=True)
-        else:
-            raise ValueError
-    except:
-        await edit_or_send(state, message.chat.id, "❌ Выбери час из кнопок (0-23)", get_reminder_hour_buttons(), edit=True)
-
-@dp.message_handler(state=ReminderStates.minute)
-async def reminder_minute(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await safe_finish(state, message)
-        await notes_reminders_main(message)
-        return
-    if message.text == "⬅️ Назад":
-        await ReminderStates.hour.set()
-        await edit_or_send(state, message.chat.id, "🕐 Выбери час:", get_reminder_hour_buttons(), edit=True)
-        return
-    if message.text not in ["00", "15", "30", "45"]:
-        await edit_or_send(state, message.chat.id, "❌ Выбери минуты из кнопок: 00, 15, 30, 45", get_reminder_minute_buttons(), edit=True)
-        return
 
     data = await state.get_data()
     text = data["text"]
     target_date = data["date"]
     time_str = f"{data['hour']:02d}:{message.text}"
+    
     # Validate datetime >= now + MIN_DELTA
     try:
         target_dt = datetime.strptime(f"{target_date} {time_str}", "%Y-%m-%d %H:%M")
@@ -931,6 +775,7 @@ async def reminder_advance(message: types.Message, state: FSMContext):
     text = data["text"]
     target_date = data["date"]
     time_str = f"{data['hour']:02d}:{data['minute']}"
+    
     # Validate main reminder datetime (redundant but safe)
     try:
         main_dt = datetime.strptime(f"{target_date} {time_str}", "%Y-%m-%d %H:%M")
@@ -969,13 +814,13 @@ async def reminder_advance(message: types.Message, state: FSMContext):
         await send_temp_message(message.chat.id, f"✅ Напоминание добавлено!\n\n📝 {text}\n🕐 {target_date} {time_str}", 4)
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
-# ========== VIEW MENU ENTRY ==========
+# ========== ПРОСМОТР ЗАПИСЕЙ ==========
 @dp.message_handler(text="📋 Мои записи")
 async def view_records(message: types.Message, state: FSMContext):
     await state.finish()
     await message.answer("Что хочешь посмотреть?", reply_markup=get_view_type_buttons())
 
-# ========== NOTES LIST & EDIT ==========
+# ========== ЗАМЕТКИ (СПИСОК, РЕДАКТИРОВАНИЕ, УДАЛЕНИЕ) ==========
 @dp.message_handler(text="📋 Заметки")
 async def list_notes(message: types.Message, state: FSMContext):
     await state.finish()
@@ -1008,7 +853,6 @@ async def note_select(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("note_edit_"), state='*')
 async def note_edit_start(callback: types.CallbackQuery, state: FSMContext):
-    await state.finish()
     note_id = int(callback.data.split("_")[-1])
     await state.update_data(edit_note_id=note_id)
     await NoteStates.edit_text.set()
@@ -1027,15 +871,7 @@ async def note_edit_text(message: types.Message, state: FSMContext):
         return
     if message.text == "⬅️ Назад":
         await state.finish()
-        notes = db.get_notes(message.from_user.id)
-        if notes:
-            visible_notes = list(reversed(notes[-10:]))
-            text = "📋 *Твои заметки (последние 10):*\n\n"
-            for i, note in enumerate(visible_notes, 1):
-                text += f"{i}. {note['text']}\n   📅 {note.get('date','-')} {note.get('time','')}\n\n"
-            await message.answer(text, parse_mode="Markdown", reply_markup=get_notes_list_keyboard(visible_notes))
-        else:
-            await message.answer("📋 У тебя пока нет заметок.", reply_markup=get_notes_reminders_main_menu())
+        await list_notes(message, state)
         return
     db.update_note_text(message.from_user.id, note_id, message.text)
     await state.finish()
@@ -1043,7 +879,6 @@ async def note_edit_text(message: types.Message, state: FSMContext):
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("note_del_"), state='*')
 async def note_delete(callback: types.CallbackQuery, state: FSMContext):
-    await state.finish()
     note_id = int(callback.data.split("_")[-1])
     db.delete_note_by_id(callback.from_user.id, note_id)
     await callback.answer("Заметка удалена", show_alert=False)
@@ -1084,7 +919,7 @@ async def note_back_to_list(callback: types.CallbackQuery):
     await list_notes(callback.message, dp.current_state(chat=callback.message.chat.id, user=callback.from_user.id))
     await callback.answer()
 
-# ========== REMINDERS LIST & EDIT ==========
+# ========== НАПОМИНАНИЯ (СПИСОК, РЕДАКТИРОВАНИЕ, УДАЛЕНИЕ) ==========
 @dp.message_handler(text="⏰ Напоминания")
 async def list_reminders(message: types.Message, state: FSMContext):
     await state.finish()
@@ -1111,7 +946,6 @@ async def reminder_select(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("reminder_edit_text_"), state='*')
 async def reminder_edit_text_start(callback: types.CallbackQuery, state: FSMContext):
-    await state.finish()
     reminder_id = int(callback.data.split("_")[-1])
     await state.update_data(edit_reminder_id=reminder_id)
     await ReminderStates.edit_text.set()
@@ -1138,7 +972,6 @@ async def reminder_edit_text(message: types.Message, state: FSMContext):
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("reminder_delete_"), state='*')
 async def reminder_delete(callback: types.CallbackQuery, state: FSMContext):
-    await state.finish()
     reminder_id = int(callback.data.split("_")[-1])
     db.delete_reminder(callback.from_user.id, reminder_id)
     await callback.answer("Напоминание удалено", show_alert=False)
@@ -1151,7 +984,6 @@ async def reminder_delete(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("reminder_edit_time_"), state='*')
 async def reminder_edit_time_start(callback: types.CallbackQuery, state: FSMContext):
-    await state.finish()
     reminder_id = int(callback.data.split("_")[-1])
     await state.update_data(edit_reminder_id=reminder_id)
     await ReminderStates.edit_date.set()
@@ -1264,7 +1096,6 @@ async def reminder_edit_minute(message: types.Message, state: FSMContext):
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("reminder_edit_advance_"), state='*')
 async def reminder_edit_advance_start(callback: types.CallbackQuery, state: FSMContext):
-    await state.finish()
     reminder_id = int(callback.data.split("_")[-1])
     reminder = db.get_reminder_by_id(callback.from_user.id, reminder_id)
     if not reminder:
@@ -1273,7 +1104,7 @@ async def reminder_edit_advance_start(callback: types.CallbackQuery, state: FSMC
     current_kind = reminder.get("advance_type")
     if reminder.get("parent_id"):
         parent = db.get_reminder_by_id(callback.from_user.id, reminder.get("parent_id"))
-        current_kind = reminder.get("advance_kind") if reminder else None
+        current_kind = parent.get("advance_type") if parent else None
         reminder_id = parent["id"] if parent else reminder_id
     await callback.message.edit_text(
         "⏰ Настройка дополнительного напоминания.\nВыбери вариант:",
@@ -1283,7 +1114,6 @@ async def reminder_edit_advance_start(callback: types.CallbackQuery, state: FSMC
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("remadv_set_"), state='*')
 async def reminder_set_advance(callback: types.CallbackQuery, state: FSMContext):
-    await state.finish()
     match = re.fullmatch(r"remadv_set_(\d+)_(day|3h|1h|none)", callback.data or "")
     if not match:
         await callback.answer("Некорректная команда", show_alert=True)
@@ -1292,7 +1122,6 @@ async def reminder_set_advance(callback: types.CallbackQuery, state: FSMContext)
     selected_kind = match.group(2)
     advance_type = None if selected_kind == "none" else selected_kind
 
-    # Validate that advance time (if any) is not in the past / too close
     reminder = db.get_reminder_by_id(callback.from_user.id, reminder_id)
     if not reminder:
         await callback.answer("Напоминание не найдено", show_alert=True)
@@ -1314,7 +1143,6 @@ async def reminder_set_advance(callback: types.CallbackQuery, state: FSMContext)
             adv_dt = None
         if adv_dt and adv_dt < now + MIN_DELTA:
             await callback.answer("Доп. напоминание попало в прошлое или слишком близко. Выбери другой вариант или время.", show_alert=True)
-            # reopen advance keyboard with same reminder info
             current_kind = reminder.get("advance_type") or "none"
             await callback.message.edit_text(
                 "⏰ Настройка дополнительного напоминания.\nВыбери вариант:",
