@@ -30,7 +30,43 @@ MIN_DELTA = timedelta(minutes=2)
 
 # ========== AI СОВЕТНИК ==========
 ai_advisor = AIAdvisor(api_key=OPENAI_API_KEY)
+async def check_custom_reminders():
+    try:
+        if not os.path.exists(REMINDER_FILE):
+            return
 
+        with open(REMINDER_FILE, "r") as f:
+            all_data = json.load(f)
+
+        now_utc = datetime.utcnow()
+
+        for user_id, settings in all_data.items():
+            user_id = int(user_id)
+            tz = db.get_user_timezone(user_id)
+
+            user_time = now_utc + timedelta(hours=tz)
+            current_time = user_time.strftime("%H:%M")
+
+            # сон
+            if settings["sleep"]["enabled"]:
+                if settings["sleep"]["time"] == current_time:
+                    if not db.has_sleep_today(user_id):
+                        await bot.send_message(user_id, "🛌 Пора записать сон")
+
+            # чек-ины
+            if settings["checkins"]["enabled"]:
+                for t in settings["checkins"]["times"]:
+                    if t == current_time:
+                        await bot.send_message(user_id, "⚡️ Сделай чек-ин")
+
+            # итог дня
+            if settings["summary"]["enabled"]:
+                if settings["summary"]["time"] == current_time:
+                    if db.get_target_date_for_summary(user_id):
+                        await bot.send_message(user_id, "📝 Не забудь подвести итог дня")
+
+    except Exception as e:
+        logging.error(f"Ошибка кастомных напоминаний: {e}")
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 async def edit_or_send(state: FSMContext, user_id, text, keyboard=None, edit=True):
     data = await state.get_data()
