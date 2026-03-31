@@ -58,3 +58,5 @@ class ExportStates(StatesGroup):
 class ConverterStates(StatesGroup):
     file = State()
     format = State()
+class AIState(StatesGroup):
+    waiting_question = State()
