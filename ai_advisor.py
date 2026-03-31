@@ -20,7 +20,7 @@ class AIAdvisor:
     def clear_user_data(self, user_id: int):
         self.user_context.pop(user_id, None)
 
-    async def get_advice(self, user_id: int, user_question: Optional[str] = None) -> str:
+    async def get_advice(self, user_id: int, user_data: Dict, user_question: Optional[str] = None) -> str:
         if not self.api_key:
             return "❌ API-ключ не задан. Добавьте OPENAI_API_KEY в переменные окружения."
 
