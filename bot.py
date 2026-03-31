@@ -26,6 +26,8 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
+# AI-советник
+ai_advisor = AIAdvisor(api_key=OPENAI_API_KEY)
 
 MIN_DELTA = timedelta(minutes=2)
 
