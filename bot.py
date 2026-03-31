@@ -169,6 +169,40 @@ async def download_media_with_ytdlp(url: str, fmt: str, progress_msg: types.Mess
 
     return await asyncio.to_thread(sync_download)
 
+REMINDER_FILE = "reminder_settings.json"
+
+
+def load_reminder_settings(user_id):
+    if not os.path.exists(REMINDER_FILE):
+        return None
+
+    with open(REMINDER_FILE, "r") as f:
+        data = json.load(f)
+
+    return data.get(str(user_id))
+
+
+def save_reminder_settings(user_id, settings):
+    data = {}
+    if os.path.exists(REMINDER_FILE):
+        with open(REMINDER_FILE, "r") as f:
+            data = json.load(f)
+
+    data[str(user_id)] = settings
+
+    with open(REMINDER_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def get_default_reminders():
+    return {
+        "sleep": {"enabled": True, "time": "09:00"},
+        "checkins": {
+            "enabled": True,
+            "times": ["12:00", "16:00", "20:00"]
+        },
+        "summary": {"enabled": True, "time": "22:30"}
+    }
 # ========== КОМАНДЫ ==========
 CITY_TO_OFFSET = {
     "Москва (UTC+3)": 3,
