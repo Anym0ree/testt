@@ -219,6 +219,62 @@ async def cmd_menu(message: types.Message, state: FSMContext):
     await delete_dialog_message(state)
     await state.finish()
     await message.answer("Главное меню", reply_markup=get_main_menu())
+@dp.message_handler(state=TimezoneStates.city)
+async def timezone_city(message: types.Message, state: FSMContext):
+    if message.text in ("❌ Отмена", "⬅️ Назад"):
+        await safe_finish(state, message)
+        return
+
+    if message.text == "Другое":
+        await TimezoneStates.offset.set()
+        await edit_or_send(
+            state,
+            message.chat.id,
+            "Введи смещение от UTC (например: -5, 0, +3):",
+            get_back_button(),
+            edit=False
+        )
+        return
+
+    if message.text in CITY_TO_OFFSET:
+        db.set_user_timezone(message.from_user.id, CITY_TO_OFFSET[message.text])
+        await delete_dialog_message(state)
+        await state.finish()
+        await message.answer("✅ Часовой пояс сохранён.", reply_markup=get_main_menu())
+        return
+
+    await message.answer("Выбери город из кнопок или нажми «Другое».", reply_markup=get_timezone_buttons())
+
+@dp.message_handler(state=TimezoneStates.offset)
+async def timezone_offset(message: types.Message, state: FSMContext):
+    if message.text == "⬅️ Назад":
+        await TimezoneStates.city.set()
+        await edit_or_send(
+            state,
+            message.chat.id,
+            "Выбери свой город или нажми «Другое»:",
+            get_timezone_buttons(),
+            edit=True
+        )
+        return
+    if message.text == "❌ Отмена":
+        await safe_finish(state, message)
+        return
+
+    raw_value = message.text.strip().replace("UTC", "").replace("utc", "")
+    if not re.fullmatch(r"[+-]?\d{1,2}", raw_value):
+        await send_temp_message(message.chat.id, "❌ Введи число от -12 до +14 (например: -5, 0, +3).", 3)
+        return
+
+    offset = int(raw_value)
+    if offset < -12 or offset > 14:
+        await send_temp_message(message.chat.id, "❌ Смещение должно быть в диапазоне от -12 до +14.", 3)
+        return
+
+    db.set_user_timezone(message.from_user.id, offset)
+    await delete_dialog_message(state)
+    await state.finish()
+    await message.answer("✅ Часовой пояс сохранён.", reply_markup=get_main_menu())
 
 # ========== ОСТАЛЬНЫЕ ОБРАБОТЧИКИ (СОН, ЧЕК-ИН, ИТОГ ДНЯ, ЕДА/НАПИТКИ) ==========
 # Они остаются без изменений (как в твоём исходном коде). 
