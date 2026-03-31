@@ -1389,7 +1389,54 @@ async def converter_format(message: types.Message, state: FSMContext):
         safe_remove_file(input_path)
         safe_remove_file(output_path)
     await message.answer("Главное меню", reply_markup=get_main_menu())
+@dp.message_handler(state=ReminderSetupStates.ask)
+async def reminder_setup_ask(message: types.Message, state: FSMContext):
+    if message.text == "❌ Нет":
+        settings = get_default_reminders()
+        settings["sleep"]["enabled"] = False
+        settings["checkins"]["enabled"] = False
+        settings["summary"]["enabled"] = False
 
+        save_reminder_settings(message.from_user.id, settings)
+
+        await state.finish()
+        await message.answer("❌ Напоминания выключены", reply_markup=get_main_menu())
+        return
+
+    await ReminderSetupStates.choose_mode.set()
+    await message.answer(
+        "Использовать стандартные настройки?\n\n"
+        "🛌 Сон — 09:00\n"
+        "⚡️ Чек-ины — 12:00, 16:00, 20:00\n"
+        "📝 Итог дня — 22:30",
+        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("✅ Да", "✏️ Настроить вручную")
+    )
+@dp.message_handler(text="🔔 Напоминания")
+async def reminder_settings(message: types.Message):
+    settings = load_reminder_settings(message.from_user.id)
+
+    if not settings:
+        settings = get_default_reminders()
+
+    text = (
+        "🔔 Напоминания:\n\n"
+        f"🛌 Сон — {settings['sleep']['time']} {'✅' if settings['sleep']['enabled'] else '❌'}\n"
+        f"⚡️ Чек-ины — {len(settings['checkins']['times'])} раз {'✅' if settings['checkins']['enabled'] else '❌'}\n"
+        f"📝 Итог дня — {settings['summary']['time']} {'✅' if settings['summary']['enabled'] else '❌'}"
+    )
+
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("🛌 Сон", "⚡️ Чек-ины")
+    kb.add("📝 Итог дня", "⬅️ Назад")
+
+    await message.answer(text, reply_markup=kb)
+
+@dp.message_handler(state=ReminderSetupStates.choose_mode)
+async def reminder_setup_mode(message: types.Message, state: FSMContext):
+    save_reminder_settings(message.from_user.id, get_default_reminders())
+
+    await state.finish()
+    await message.answer("✅ Напоминания включены!", reply_markup=get_main_menu())
 # ========== НАСТРОЙКИ ==========
 @dp.message_handler(text="⚙️ Настройки")
 async def settings(message: types.Message):
@@ -1476,6 +1523,7 @@ async def on_startup(dp):
     scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
     scheduler.start()
     scheduler.add_job(check_custom_reminders, IntervalTrigger(minutes=1))
+    
     print("🤖 Бот запущен и планировщик уведомлений активен!")
     
 async def on_shutdown(dp):
