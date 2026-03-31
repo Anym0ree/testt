@@ -919,13 +919,15 @@ async def list_reminders(message: types.Message, state: FSMContext):
 # ========== ОБРАБОТЧИКИ КОМАНД ДЛЯ ЗАМЕТОК И НАПОМИНАНИЙ ==========
 @dp.message_handler(regexp=r'^копировать (\d+)$', state='*')
 async def copy_note(message: types.Message, state: FSMContext):
+    match = re.match(r'^копировать (\d+)$', message.text)
+    if not match:
+        return
+    index = int(match.group(1))
     data = await state.get_data()
     last_section = data.get('last_section')
     if last_section != 'notes':
         await send_temp_message(message.chat.id, "❌ Сначала открой список заметок.", 3)
         return
-    match = re.match(r'^копировать (\d+)$', message.text)
-    index = int(match.group(1))
     notes = db.get_notes(message.from_user.id)
     if not notes:
         await send_temp_message(message.chat.id, "❌ Заметок нет.", 3)
@@ -935,18 +937,20 @@ async def copy_note(message: types.Message, state: FSMContext):
         await send_temp_message(message.chat.id, f"❌ Неверный номер. Доступно заметок: {len(visible)}", 3)
         return
     note = visible[index-1]
-    await bot.send_message(message.from_user.id, f"📋 *Скопированная заметка:*\n\n{note['text']}", parse_mode="Markdown")
+    await bot.send_message(message.from_user.id, f"📋 *Скопированная заметка:*\n\n{note['text']}", parse_mode=None)
     await send_temp_message(message.chat.id, "✅ Заметка скопирована и отправлена тебе в чат!", 3)
 
 @dp.message_handler(regexp=r'^редактировать (\d+)$', state='*')
 async def edit_note_or_reminder(message: types.Message, state: FSMContext):
+    match = re.match(r'^редактировать (\d+)$', message.text)
+    if not match:
+        return
+    index = int(match.group(1))
     data = await state.get_data()
     last_section = data.get('last_section')
     if not last_section:
         await send_temp_message(message.chat.id, "❌ Сначала открой список заметок или напоминаний.", 3)
         return
-    match = re.match(r'^редактировать (\d+)$', message.text)
-    index = int(match.group(1))
 
     if last_section == 'notes':
         notes = db.get_notes(message.from_user.id)
@@ -973,11 +977,8 @@ async def edit_note_or_reminder(message: types.Message, state: FSMContext):
             await send_temp_message(message.chat.id, f"❌ Неверный номер. Доступно основных напоминаний: {len(main_reminders)}", 3)
             return
         reminder = main_reminders[index-1]
-        # Сохраняем данные в state
         await state.update_data(edit_reminder_data=reminder)
-        # Удаляем старое напоминание (и доп.)
         db.delete_reminder(message.from_user.id, reminder['id'])
-        # Запускаем процесс создания нового
         await ReminderStates.text.set()
         await state.update_data(edit_reminder_text=reminder['text'])
         await edit_or_send(state, message.chat.id, f"✏️ *Редактирование напоминания*\n\nТекущий текст:\n{reminder['text']}\n\nВведи новый текст (или оставь как есть):", get_back_button(), edit=False)
@@ -986,13 +987,15 @@ async def edit_note_or_reminder(message: types.Message, state: FSMContext):
 
 @dp.message_handler(regexp=r'^удалить (\d+)$', state='*')
 async def delete_item(message: types.Message, state: FSMContext):
+    match = re.match(r'^удалить (\d+)$', message.text)
+    if not match:
+        return
+    index = int(match.group(1))
     data = await state.get_data()
     last_section = data.get('last_section')
     if not last_section:
         await send_temp_message(message.chat.id, "❌ Сначала открой список заметок или напоминаний.", 3)
         return
-    match = re.match(r'^удалить (\d+)$', message.text)
-    index = int(match.group(1))
 
     if last_section == 'notes':
         notes = db.get_notes(message.from_user.id)
@@ -1021,7 +1024,6 @@ async def delete_item(message: types.Message, state: FSMContext):
         await send_temp_message(message.chat.id, f"✅ Напоминание {index} и связанные с ним удалены.", 3)
     else:
         await send_temp_message(message.chat.id, "❌ Неизвестный раздел.", 3)
-
 # ========== AI СОВЕТ (ДИАЛОГ) ==========
 @dp.message_handler(text="🤖 AI-совет")
 async def ai_advice_start(message: types.Message, state: FSMContext):
