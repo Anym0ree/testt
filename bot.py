@@ -1509,9 +1509,6 @@ async def on_shutdown(dp):
         scheduler.shutdown(wait=False)
     await stop_web(web_task)
     web_task = None
-
-if __name__ == "__main__":
-    executor.start_polling(dp, on_startup=on_startup, on_shutdown=on_shutdown)
 # ========== ПРОСТОЙ HTTP-СЕРВЕР ДЛЯ HEALTHCHECK ==========
 import asyncio
 from aiohttp import web
@@ -1531,3 +1528,5 @@ async def run_http_server():
     print(f"🌐 Healthcheck сервер запущен на порту {port}")
     # Бесконечно ждем
     await asyncio.Event().wait()
+if __name__ == "__main__":
+   
