@@ -1494,13 +1494,13 @@ async def check_reminders():
 from web import start_web, stop_web
 
 async def on_startup(dp):
-    global scheduler, web_task
+    global scheduler
     await bot.delete_webhook(drop_pending_updates=True)
-    web_task = start_web()
+    await asyncio.sleep(1)  # ждём, чтобы Telegram обработал сброс
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
-    scheduler.start()
     scheduler.add_job(check_custom_reminders, IntervalTrigger(minutes=1))
+    scheduler.start()
     print("🤖 Бот запущен и планировщик уведомлений активен!")
 
 async def on_shutdown(dp):
