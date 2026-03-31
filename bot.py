@@ -214,7 +214,6 @@ async def show_start_flow(user_id: int, chat_id: int):
 
 @dp.message_handler(commands=['menu'], state='*')
 async def cmd_menu(message: types.Message, state: FSMContext):
-    # Если был активен AI-диалог, очищаем кэш
     ai_advisor.clear_user_data(message.from_user.id)
     await delete_dialog_message(state)
     await state.finish()
@@ -867,7 +866,7 @@ async def reminder_custom_time(message: types.Message, state: FSMContext):
         await safe_finish(state, message)
         return
 
-    # Создаём доп. напоминание с custom_time (используем ту же функцию add_reminder с parent_id и custom_time)
+    # Создаём доп. напоминание с custom_time
     adv_text = f"🔔 Напоминание: {text}"
     db.add_reminder(message.from_user.id, adv_text, target_date_str, custom_time, advance_type=None, parent_id=main_id, is_custom=True)
 
@@ -908,7 +907,6 @@ async def list_reminders(message: types.Message, state: FSMContext):
         await message.answer("📋 У тебя пока нет активных напоминаний.", reply_markup=get_notes_reminders_main_menu())
         return
     await state.update_data(last_section='reminders')
-    # Показываем только основные напоминания (без parent_id) для удобства
     main_reminders = [r for r in reminders if not r.get('parent_id')]
     text = "📋 *Твои основные напоминания:*\n\n"
     for i, r in enumerate(main_reminders, 1):
@@ -977,11 +975,8 @@ async def edit_note_or_reminder(message: types.Message, state: FSMContext):
             await send_temp_message(message.chat.id, f"❌ Неверный номер. Доступно основных напоминаний: {len(main_reminders)}", 3)
             return
         reminder = main_reminders[index-1]
-        # Сохраняем данные в state
         await state.update_data(edit_reminder_data=reminder)
-        # Удаляем старое напоминание (и доп.)
         db.delete_reminder(message.from_user.id, reminder['id'])
-        # Запускаем процесс создания нового
         await ReminderStates.text.set()
         await state.update_data(edit_reminder_text=reminder['text'])
         await edit_or_send(state, message.chat.id, f"✏️ *Редактирование напоминания*\n\nТекущий текст:\n{reminder['text']}\n\nВведи новый текст (или оставь как есть):", get_back_button(), edit=False)
@@ -1032,7 +1027,6 @@ async def delete_item(message: types.Message, state: FSMContext):
 @dp.message_handler(text="🤖 AI-совет")
 async def ai_advice_start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    # Собираем данные
     user_data = {
         "sleep": db._load_json(user_id, "sleep.json"),
         "checkins": db._load_json(user_id, "checkins.json"),
@@ -1047,7 +1041,7 @@ async def ai_advice_start(message: types.Message, state: FSMContext):
     advice = await ai_advisor.get_advice(user_id)
     await message.answer(
         f"🤖 *Совет AI:*\n\n{advice}",
-        parse_mode=None,   # отключаем Markdown, чтобы избежать ошибок
+        parse_mode=None,
         reply_markup=get_back_button()
     )
     await message.answer(
@@ -1058,14 +1052,21 @@ async def ai_advice_start(message: types.Message, state: FSMContext):
 @dp.message_handler(state=AIState.waiting_question)
 async def ai_question(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    if message.text in ("/cancel", "⬅️ Назад"):
+    # Выход по /cancel
+    if message.text == "/cancel":
+        await state.finish()
+        ai_advisor.clear_user_data(user_id)
+        await message.answer("✅ Выход из AI-режима.", reply_markup=get_main_menu())
+        return
+
+    # Выход по кнопке "Назад"
+    if message.text == "⬅️ Назад":
         await state.finish()
         ai_advisor.clear_user_data(user_id)
         await message.answer("✅ Выход из AI-режима.", reply_markup=get_main_menu())
         return
 
     if not ai_advisor.get_user_data(user_id):
-        # Если нет в кэше (например, после перезапуска), загружаем заново
         user_data = {
             "sleep": db._load_json(user_id, "sleep.json"),
             "checkins": db._load_json(user_id, "checkins.json"),
@@ -1314,7 +1315,7 @@ async def converter_format(message: types.Message, state: FSMContext):
         safe_remove_file(output_path)
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
-# ========== НАСТРОЙКИ (УБРАН СБРОС ДАННЫХ) ==========
+# ========== НАСТРОЙКИ ==========
 @dp.message_handler(text="⚙️ Настройки")
 async def settings(message: types.Message):
     await message.answer(
@@ -1335,7 +1336,7 @@ async def change_city(message: types.Message):
 async def back_from_settings(message: types.Message):
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
-# ========== УВЕДОМЛЕНИЯ И ЗАПУСК ==========
+# ========== УВЕДОМЛЕНИЯ ==========
 scheduler = None
 web_task = None
 
