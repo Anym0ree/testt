@@ -214,6 +214,8 @@ async def show_start_flow(user_id: int, chat_id: int):
 
 @dp.message_handler(commands=['menu'], state='*')
 async def cmd_menu(message: types.Message, state: FSMContext):
+    # Очищаем кэш AI, если был активен
+    ai_advisor.clear_user_data(message.from_user.id)
     await delete_dialog_message(state)
     await state.finish()
     await message.answer("Главное меню", reply_markup=get_main_menu())
