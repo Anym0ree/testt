@@ -5,7 +5,7 @@ from typing import Dict, Optional
 class AIAdvisor:
     """Класс для получения AI-советов через DeepSeek API (бесплатно)."""
 
-    def __init__(self, api_key: str, model: str = "deepseek-chat", base_url: str = "https://api.deepseek.com/v1/chat/completions"):
+    def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile", base_url: str = "https://api.groq.com/openai/v1/chat/completions"):
         self.api_key = api_key
         self.model = model
         self.base_url = base_url
