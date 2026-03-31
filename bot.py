@@ -1375,6 +1375,45 @@ async def back_from_settings(message: types.Message):
 scheduler = None
 web_task = None
 
+async def check_custom_reminders():
+    try:
+        if not os.path.exists(REMINDER_FILE):
+            return
+
+        with open(REMINDER_FILE, "r") as f:
+            all_data = json.load(f)
+
+        now_utc = datetime.utcnow()
+
+        for user_id, settings in all_data.items():
+            user_id = int(user_id)
+            tz = db.get_user_timezone(user_id)
+
+            user_time = now_utc + timedelta(hours=tz)
+            current_time = user_time.strftime("%H:%M")
+
+            # 🛌 Сон
+            if settings["sleep"]["enabled"]:
+                if settings["sleep"]["time"] == current_time:
+                    if not db.has_sleep_today(user_id):
+                        await bot.send_message(user_id, "🛌 Пора записать сон")
+
+            # ⚡️ Чек-ины
+            if settings["checkins"]["enabled"]:
+                for t in settings["checkins"]["times"]:
+                    if t == current_time:
+                        await bot.send_message(user_id, "⚡️ Сделай чек-ин")
+
+            # 📝 Итог дня
+            if settings["summary"]["enabled"]:
+                if settings["summary"]["time"] == current_time:
+                    if not db.get_target_date_for_summary(user_id):
+                        continue
+                    await bot.send_message(user_id, "📝 Не забудь подвести итог дня")
+
+    except Exception as e:
+        logging.error(f"Ошибка кастомных напоминаний: {e}")
+        
 async def check_reminders():
     due_reminders = db.get_reminders_due_now()
     for user_id, reminder in due_reminders:
