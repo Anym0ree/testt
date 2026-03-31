@@ -7,6 +7,7 @@ def get_main_menu():
         [KeyboardButton(text="📝 Итог дня")],
         [KeyboardButton(text="🍽🥤 Еда и напитки")],
         [KeyboardButton(text="📝 Заметки и напоминания")],
+        [KeyboardButton(text="🤖 AI-совет")],          # новая кнопка
         [KeyboardButton(text="📊 Статистика")],
         [KeyboardButton(text="📤 Экспорт")],
         [KeyboardButton(text="🔄 Конвертер")],
