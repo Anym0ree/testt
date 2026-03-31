@@ -21,6 +21,7 @@ class AIAdvisor:
         self.user_context.pop(user_id, None)
 
     async def get_advice(self, user_id: int, user_question: Optional[str] = None) -> str:
+    user_data = self.get_user_data(user_id
         if not self.api_key:
             return "❌ API-ключ не задан. Добавьте OPENAI_API_KEY в переменные окружения."
 
