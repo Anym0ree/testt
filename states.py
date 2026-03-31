@@ -45,11 +45,14 @@ class ReminderStates(StatesGroup):
     hour = State()
     minute = State()
     advance = State()
+    custom_time = State() 
     edit_text = State()
     edit_date = State()
     edit_hour = State()
     edit_minute = State()
     edit_reminder_id = State()
+class LastSectionState(StatesGroup):
+    section = State()   # 'notes' или 'reminders'
 
 class ExportStates(StatesGroup):
     url = State()
