@@ -21,6 +21,25 @@ from keyboards import *
 from states import *
 from ai_advisor import AIAdvisor
 
+# ========== HTTP-СЕРВЕР ДЛЯ HEALTHCHECK ==========
+from aiohttp import web
+
+async def healthcheck(request):
+    return web.Response(text="OK")
+
+async def run_http_server():
+    port = int(os.environ.get("PORT", 10000))
+    app = web.Application()
+    app.router.add_get("/", healthcheck)
+    app.router.add_get("/health", healthcheck)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    print(f"🌐 Healthcheck сервер запущен на порту {port}")
+    await asyncio.Event().wait()  # вечный сон
+
+# ========== НАСТРОЙКА ЛОГИРОВАНИЯ ==========
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
@@ -124,7 +143,6 @@ async def download_media_with_ytdlp(url: str, fmt: str, progress_msg: types.Mess
 
     def sync_download():
         is_youtube = 'youtube.com' in url or 'youtu.be' in url
-        # Используем временный файл через tempfile
         tmp_dir = tempfile.gettempdir()
         outtmpl = os.path.join(tmp_dir, '%(title).120s-%(id)s.%(ext)s')
         opts = {
@@ -175,7 +193,6 @@ async def download_media_with_ytdlp(url: str, fmt: str, progress_msg: types.Mess
 
 REMINDER_FILE = "reminder_settings.json"
 
-
 def load_reminder_settings(user_id):
     try:
         if not os.path.exists(REMINDER_FILE):
@@ -187,7 +204,6 @@ def load_reminder_settings(user_id):
         logging.error(f"Ошибка загрузки настроек напоминаний: {e}")
         return None
 
-
 def save_reminder_settings(user_id, settings):
     data = {}
     if os.path.exists(REMINDER_FILE):
@@ -196,20 +212,14 @@ def save_reminder_settings(user_id, settings):
                 data = json.load(f)
         except Exception:
             pass
-
     data[str(user_id)] = settings
-
     with open(REMINDER_FILE, "w") as f:
         json.dump(data, f, indent=2)
-
 
 def get_default_reminders():
     return {
         "sleep": {"enabled": True, "time": "09:00"},
-        "checkins": {
-            "enabled": True,
-            "times": ["12:00", "16:00", "20:00"]
-        },
+        "checkins": {"enabled": True, "times": ["12:00", "16:00", "20:00"]},
         "summary": {"enabled": True, "time": "22:30"}
     }
 
@@ -905,10 +915,8 @@ async def reminder_custom_time(message: types.Message, state: FSMContext):
         await edit_or_send(state, message.chat.id, "✏️ Введи другое время:", get_back_button(), edit=True)
         return
 
-    # Сохраняем custom_time в state
     await state.update_data(custom_time=custom_time)
 
-    # Создаём основное напоминание без доп.
     text = data['text']
     target_date_str = data['date']
     time_str = f"{data['hour']:02d}:{data['minute']}"
@@ -919,7 +927,6 @@ async def reminder_custom_time(message: types.Message, state: FSMContext):
         await safe_finish(state, message)
         return
 
-    # Создаём доп. напоминание с custom_time
     adv_text = f"🔔 Напоминание: {text}"
     db.add_reminder(message.from_user.id, adv_text, target_date_str, custom_time, advance_type=None, parent_id=main_id, is_custom=True)
 
@@ -1105,14 +1112,12 @@ async def ai_advice_start(message: types.Message, state: FSMContext):
 @dp.message_handler(state=AIState.waiting_question)
 async def ai_question(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    # Выход по /cancel
     if message.text == "/cancel":
         await state.finish()
         ai_advisor.clear_user_data(user_id)
         await message.answer("✅ Выход из AI-режима.", reply_markup=get_main_menu())
         return
 
-    # Выход по кнопке "Назад"
     if message.text == "⬅️ Назад":
         await state.finish()
         ai_advisor.clear_user_data(user_id)
@@ -1316,10 +1321,8 @@ async def converter_format(message: types.Message, state: FSMContext):
     output_path = None
 
     try:
-        # Проверяем наличие ffmpeg
         ffmpeg_path = shutil.which('ffmpeg')
         if not ffmpeg_path:
-            # Пробуем в текущей директории
             ffmpeg_path = os.path.join(os.getcwd(), 'ffmpeg')
             if not os.path.exists(ffmpeg_path):
                 raise Exception("ffmpeg не найден в системе. Установите ffmpeg или поместите его в папку с ботом.")
@@ -1386,7 +1389,6 @@ async def reminder_setup_ask(message: types.Message, state: FSMContext):
         await message.answer("❌ Напоминания выключены", reply_markup=get_main_menu())
         return
 
-    # Пользователь выбрал "✅ Да" — используем стандартные настройки
     save_reminder_settings(message.from_user.id, get_default_reminders())
     await state.finish()
     await message.answer("✅ Напоминания включены!", reply_markup=get_main_menu())
@@ -1422,7 +1424,6 @@ async def reminder_settings(message: types.Message):
         f"📝 Итог дня — {settings['summary']['time']} {'✅' if settings['summary']['enabled'] else '❌'}"
     )
 
-    # Просто показываем информацию, без кнопок настройки (можно добавить позже)
     await message.answer(text, reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("⬅️ Назад"))
 
 @dp.message_handler(text="⬅️ Назад")
@@ -1431,7 +1432,6 @@ async def back_from_settings(message: types.Message):
 
 # ========== УВЕДОМЛЕНИЯ ==========
 scheduler = None
-web_task = None
 
 async def check_custom_reminders():
     try:
@@ -1447,31 +1447,26 @@ async def check_custom_reminders():
             user_id = int(user_id)
             tz = db.get_user_timezone(user_id)
 
-            # Пропускаем, если часовой пояс не задан
             if tz == 0:
                 continue
 
             user_time = now_utc + timedelta(hours=tz)
             current_time = user_time.strftime("%H:%M")
 
-            # 🛌 Сон
             if settings["sleep"]["enabled"]:
                 if settings["sleep"]["time"] == current_time:
                     if not db.has_sleep_today(user_id):
                         await bot.send_message(user_id, "🛌 Пора записать сон")
 
-            # ⚡️ Чек-ины
             if settings["checkins"]["enabled"]:
                 for t in settings["checkins"]["times"]:
                     if t == current_time:
-                        # Проверяем, был ли уже чек-ин сегодня (через загрузку данных)
                         checkins = db._load_json(user_id, "checkins.json")
                         today_str = user_time.strftime("%Y-%m-%d")
                         has_today_checkin = any(c.get("date") == today_str for c in checkins)
                         if not has_today_checkin:
                             await bot.send_message(user_id, "⚡️ Сделай чек-ин")
 
-            # 📝 Итог дня
             if settings["summary"]["enabled"]:
                 if settings["summary"]["time"] == current_time:
                     if db.get_target_date_for_summary(user_id):
@@ -1491,18 +1486,15 @@ async def check_reminders():
         except Exception as e:
             logging.error(f"Ошибка отправки напоминания {reminder['id']}: {e}")
 
-from web import start_web, stop_web
-
-
 async def on_startup(dp):
     global scheduler
-    # Удаляем вебхук перед стартом поллинга — это важно!
+    print("🗑 Удаляю вебхук...")
     await bot.delete_webhook(drop_pending_updates=True)
-    await asyncio.sleep(1)  # небольшая пауза, чтобы Telegram обработал
-    
-    # Запускаем HTTP-сервер для healthcheck в фоне
+    print("✅ Вебхук удалён")
+    await asyncio.sleep(1)
+
     asyncio.create_task(run_http_server())
-    
+
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
     scheduler.add_job(check_custom_reminders, IntervalTrigger(minutes=1))
@@ -1510,29 +1502,9 @@ async def on_startup(dp):
     print("🤖 Бот запущен и планировщик уведомлений активен!")
 
 async def on_shutdown(dp):
-    global scheduler, web_task
+    global scheduler
     if scheduler and scheduler.running:
         scheduler.shutdown(wait=False)
-    await stop_web(web_task)
-    web_task = None
-# ========== ПРОСТОЙ HTTP-СЕРВЕР ДЛЯ HEALTHCHECK ==========
-import asyncio
-from aiohttp import web
 
-async def healthcheck(request):
-    return web.Response(text="OK")
-
-async def run_http_server():
-    port = int(os.environ.get("PORT", 10000))
-    app = web.Application()
-    app.router.add_get("/", healthcheck)
-    app.router.add_get("/health", healthcheck)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    print(f"🌐 Healthcheck сервер запущен на порту {port}")
-    # Бесконечно ждем
-    await asyncio.Event().wait()
 if __name__ == "__main__":
-   
+    executor.start_polling(dp, on_startup=on_startup, on_shutdown=on_shutdown, skip_updates=True)
