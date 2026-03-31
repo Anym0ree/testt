@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import tempfile
+import shutil
 from datetime import datetime, timedelta
 import json
 
@@ -30,43 +31,7 @@ MIN_DELTA = timedelta(minutes=2)
 
 # ========== AI СОВЕТНИК ==========
 ai_advisor = AIAdvisor(api_key=OPENAI_API_KEY)
-async def check_custom_reminders():
-    try:
-        if not os.path.exists(REMINDER_FILE):
-            return
 
-        with open(REMINDER_FILE, "r") as f:
-            all_data = json.load(f)
-
-        now_utc = datetime.utcnow()
-
-        for user_id, settings in all_data.items():
-            user_id = int(user_id)
-            tz = db.get_user_timezone(user_id)
-
-            user_time = now_utc + timedelta(hours=tz)
-            current_time = user_time.strftime("%H:%M")
-
-            # сон
-            if settings["sleep"]["enabled"]:
-                if settings["sleep"]["time"] == current_time:
-                    if not db.has_sleep_today(user_id):
-                        await bot.send_message(user_id, "🛌 Пора записать сон")
-
-            # чек-ины
-            if settings["checkins"]["enabled"]:
-                for t in settings["checkins"]["times"]:
-                    if t == current_time:
-                        await bot.send_message(user_id, "⚡️ Сделай чек-ин")
-
-            # итог дня
-            if settings["summary"]["enabled"]:
-                if settings["summary"]["time"] == current_time:
-                    if db.get_target_date_for_summary(user_id):
-                        await bot.send_message(user_id, "📝 Не забудь подвести итог дня")
-
-    except Exception as e:
-        logging.error(f"Ошибка кастомных напоминаний: {e}")
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 async def edit_or_send(state: FSMContext, user_id, text, keyboard=None, edit=True):
     data = await state.get_data()
@@ -159,8 +124,11 @@ async def download_media_with_ytdlp(url: str, fmt: str, progress_msg: types.Mess
 
     def sync_download():
         is_youtube = 'youtube.com' in url or 'youtu.be' in url
+        # Используем временный файл через tempfile
+        tmp_dir = tempfile.gettempdir()
+        outtmpl = os.path.join(tmp_dir, '%(title).120s-%(id)s.%(ext)s')
         opts = {
-            "outtmpl": "/tmp/%(title).120s-%(id)s.%(ext)s",
+            "outtmpl": outtmpl,
             "progress_hooks": [progress_hook],
             "noplaylist": False,
         }
@@ -209,20 +177,25 @@ REMINDER_FILE = "reminder_settings.json"
 
 
 def load_reminder_settings(user_id):
-    if not os.path.exists(REMINDER_FILE):
+    try:
+        if not os.path.exists(REMINDER_FILE):
+            return None
+        with open(REMINDER_FILE, "r") as f:
+            data = json.load(f)
+        return data.get(str(user_id))
+    except Exception as e:
+        logging.error(f"Ошибка загрузки настроек напоминаний: {e}")
         return None
-
-    with open(REMINDER_FILE, "r") as f:
-        data = json.load(f)
-
-    return data.get(str(user_id))
 
 
 def save_reminder_settings(user_id, settings):
     data = {}
     if os.path.exists(REMINDER_FILE):
-        with open(REMINDER_FILE, "r") as f:
-            data = json.load(f)
+        try:
+            with open(REMINDER_FILE, "r") as f:
+                data = json.load(f)
+        except Exception:
+            pass
 
     data[str(user_id)] = settings
 
@@ -239,6 +212,7 @@ def get_default_reminders():
         },
         "summary": {"enabled": True, "time": "22:30"}
     }
+
 # ========== КОМАНДЫ ==========
 CITY_TO_OFFSET = {
     "Москва (UTC+3)": 3,
@@ -312,9 +286,11 @@ async def timezone_city(message: types.Message, state: FSMContext):
         db.set_user_timezone(message.from_user.id, CITY_TO_OFFSET[message.text])
         await delete_dialog_message(state)
         await state.finish()
-        await message.answer(     "✅ Часовой пояс сохранён.
-
-🔔 Хочешь включить напоминания?",     reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("✅ Да", "❌ Нет") ) await ReminderSetupStates.ask.set()
+        await message.answer(
+            "✅ Часовой пояс сохранён.\n\n🔔 Хочешь включить напоминания?",
+            reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("✅ Да", "❌ Нет")
+        )
+        await ReminderSetupStates.ask.set()
         return
 
     await message.answer("Выбери город из кнопок или нажми «Другое».", reply_markup=get_timezone_buttons())
@@ -348,9 +324,11 @@ async def timezone_offset(message: types.Message, state: FSMContext):
     db.set_user_timezone(message.from_user.id, offset)
     await delete_dialog_message(state)
     await state.finish()
-    await message.answer(     "✅ Часовой пояс сохранён.
-
-🔔 Хочешь включить напоминания?",     reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("✅ Да", "❌ Нет") ) await ReminderSetupStates.ask.set()
+    await message.answer(
+        "✅ Часовой пояс сохранён.\n\n🔔 Хочешь включить напоминания?",
+        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("✅ Да", "❌ Нет")
+    )
+    await ReminderSetupStates.ask.set()
 
 # ========== СОН ==========
 @dp.message_handler(text="🛌 Сон")
@@ -1221,6 +1199,7 @@ async def export_any_format(message: types.Message, state: FSMContext):
     await state.finish()
 
     progress_msg = await message.answer("⏳ Начинаю скачивание...")
+    filename = None
 
     try:
         filename, title = await download_media_with_ytdlp(url, fmt, progress_msg)
@@ -1233,8 +1212,6 @@ async def export_any_format(message: types.Message, state: FSMContext):
             raise Exception("Файл слишком большой для отправки в Telegram (более 50 MB).")
         with open(filename, 'rb') as f:
             await message.answer_document(f, caption=f"🎵 {title}")
-        safe_remove_file(filename)
-        await safe_delete_message_obj(progress_msg)
     except Exception as e:
         logging.error(f"Ошибка загрузки: {e}")
         error_msg = str(e)
@@ -1250,6 +1227,8 @@ async def export_any_format(message: types.Message, state: FSMContext):
             await bot.edit_message_text(f"❌ Ошибка: {error_msg[:200]}\nПроверь ссылку и попробуй снова.", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
         await asyncio.sleep(3)
         await safe_delete_message_obj(progress_msg)
+    finally:
+        safe_remove_file(filename)
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
 # ========== КОНВЕРТЕР ==========
@@ -1337,9 +1316,14 @@ async def converter_format(message: types.Message, state: FSMContext):
     output_path = None
 
     try:
-        ffmpeg_path = os.path.join(os.getcwd(), 'ffmpeg')
-        if not os.path.exists(ffmpeg_path):
-            ffmpeg_path = 'ffmpeg'
+        # Проверяем наличие ffmpeg
+        ffmpeg_path = shutil.which('ffmpeg')
+        if not ffmpeg_path:
+            # Пробуем в текущей директории
+            ffmpeg_path = os.path.join(os.getcwd(), 'ffmpeg')
+            if not os.path.exists(ffmpeg_path):
+                raise Exception("ffmpeg не найден в системе. Установите ffmpeg или поместите его в папку с ботом.")
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=f".{fmt.lower()}", dir="/tmp") as tmp_out:
             output_path = tmp_out.name
         cmd = [ffmpeg_path, '-i', input_path, output_path]
@@ -1368,9 +1352,6 @@ async def converter_format(message: types.Message, state: FSMContext):
         await bot.edit_message_text("✅ Конвертация завершена! Отправляю файл...", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
         with open(output_path, 'rb') as f:
             await message.answer_document(f, caption=f"✅ Конвертировано в {fmt.upper()}")
-        safe_remove_file(input_path)
-        safe_remove_file(output_path)
-        await safe_delete_message_obj(progress_msg)
     except Exception as e:
         logging.error(f"Ошибка конвертации: {e}")
         spinner_task.cancel()
@@ -1389,6 +1370,8 @@ async def converter_format(message: types.Message, state: FSMContext):
         safe_remove_file(input_path)
         safe_remove_file(output_path)
     await message.answer("Главное меню", reply_markup=get_main_menu())
+
+# ========== НАСТРОЙКИ НАПОМИНАНИЙ ==========
 @dp.message_handler(state=ReminderSetupStates.ask)
 async def reminder_setup_ask(message: types.Message, state: FSMContext):
     if message.text == "❌ Нет":
@@ -1403,40 +1386,11 @@ async def reminder_setup_ask(message: types.Message, state: FSMContext):
         await message.answer("❌ Напоминания выключены", reply_markup=get_main_menu())
         return
 
-    await ReminderSetupStates.choose_mode.set()
-    await message.answer(
-        "Использовать стандартные настройки?\n\n"
-        "🛌 Сон — 09:00\n"
-        "⚡️ Чек-ины — 12:00, 16:00, 20:00\n"
-        "📝 Итог дня — 22:30",
-        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("✅ Да", "✏️ Настроить вручную")
-    )
-@dp.message_handler(text="🔔 Напоминания")
-async def reminder_settings(message: types.Message):
-    settings = load_reminder_settings(message.from_user.id)
-
-    if not settings:
-        settings = get_default_reminders()
-
-    text = (
-        "🔔 Напоминания:\n\n"
-        f"🛌 Сон — {settings['sleep']['time']} {'✅' if settings['sleep']['enabled'] else '❌'}\n"
-        f"⚡️ Чек-ины — {len(settings['checkins']['times'])} раз {'✅' if settings['checkins']['enabled'] else '❌'}\n"
-        f"📝 Итог дня — {settings['summary']['time']} {'✅' if settings['summary']['enabled'] else '❌'}"
-    )
-
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("🛌 Сон", "⚡️ Чек-ины")
-    kb.add("📝 Итог дня", "⬅️ Назад")
-
-    await message.answer(text, reply_markup=kb)
-
-@dp.message_handler(state=ReminderSetupStates.choose_mode)
-async def reminder_setup_mode(message: types.Message, state: FSMContext):
+    # Пользователь выбрал "✅ Да" — используем стандартные настройки
     save_reminder_settings(message.from_user.id, get_default_reminders())
-
     await state.finish()
     await message.answer("✅ Напоминания включены!", reply_markup=get_main_menu())
+
 # ========== НАСТРОЙКИ ==========
 @dp.message_handler(text="⚙️ Настройки")
 async def settings(message: types.Message):
@@ -1453,6 +1407,23 @@ async def change_city(message: types.Message):
         reply_markup=get_timezone_buttons()
     )
     await TimezoneStates.city.set()
+
+@dp.message_handler(text="🔔 Напоминания")
+async def reminder_settings(message: types.Message):
+    settings = load_reminder_settings(message.from_user.id)
+
+    if not settings:
+        settings = get_default_reminders()
+
+    text = (
+        "🔔 Напоминания:\n\n"
+        f"🛌 Сон — {settings['sleep']['time']} {'✅' if settings['sleep']['enabled'] else '❌'}\n"
+        f"⚡️ Чек-ины — {len(settings['checkins']['times'])} раз {'✅' if settings['checkins']['enabled'] else '❌'}\n"
+        f"📝 Итог дня — {settings['summary']['time']} {'✅' if settings['summary']['enabled'] else '❌'}"
+    )
+
+    # Просто показываем информацию, без кнопок настройки (можно добавить позже)
+    await message.answer(text, reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("⬅️ Назад"))
 
 @dp.message_handler(text="⬅️ Назад")
 async def back_from_settings(message: types.Message):
@@ -1476,6 +1447,10 @@ async def check_custom_reminders():
             user_id = int(user_id)
             tz = db.get_user_timezone(user_id)
 
+            # Пропускаем, если часовой пояс не задан
+            if tz == 0:
+                continue
+
             user_time = now_utc + timedelta(hours=tz)
             current_time = user_time.strftime("%H:%M")
 
@@ -1489,18 +1464,22 @@ async def check_custom_reminders():
             if settings["checkins"]["enabled"]:
                 for t in settings["checkins"]["times"]:
                     if t == current_time:
-                        await bot.send_message(user_id, "⚡️ Сделай чек-ин")
+                        # Проверяем, был ли уже чек-ин сегодня (через загрузку данных)
+                        checkins = db._load_json(user_id, "checkins.json")
+                        today_str = user_time.strftime("%Y-%m-%d")
+                        has_today_checkin = any(c.get("date") == today_str for c in checkins)
+                        if not has_today_checkin:
+                            await bot.send_message(user_id, "⚡️ Сделай чек-ин")
 
             # 📝 Итог дня
             if settings["summary"]["enabled"]:
                 if settings["summary"]["time"] == current_time:
-                    if not db.get_target_date_for_summary(user_id):
-                        continue
-                    await bot.send_message(user_id, "📝 Не забудь подвести итог дня")
+                    if db.get_target_date_for_summary(user_id):
+                        await bot.send_message(user_id, "📝 Не забудь подвести итог дня")
 
     except Exception as e:
         logging.error(f"Ошибка кастомных напоминаний: {e}")
-        
+
 async def check_reminders():
     due_reminders = db.get_reminders_due_now()
     for user_id, reminder in due_reminders:
@@ -1515,7 +1494,6 @@ async def check_reminders():
 from web import start_web, stop_web
 
 async def on_startup(dp):
-    
     global scheduler, web_task
     await bot.delete_webhook(drop_pending_updates=True)
     web_task = start_web()
@@ -1523,9 +1501,8 @@ async def on_startup(dp):
     scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
     scheduler.start()
     scheduler.add_job(check_custom_reminders, IntervalTrigger(minutes=1))
-    
     print("🤖 Бот запущен и планировщик уведомлений активен!")
-    
+
 async def on_shutdown(dp):
     global scheduler, web_task
     if scheduler and scheduler.running:
