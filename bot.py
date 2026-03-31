@@ -1230,6 +1230,38 @@ async def ai_advice_start(message: types.Message, state: FSMContext):
         "✏️ *Вы можете задать уточняющий вопрос* или написать /cancel для выхода.",
         parse_mode="Markdown"
     )
+@dp.message_handler(state=AIState.waiting_question)
+async def ai_question(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    if message.text == "/cancel":
+        await state.finish()
+        ai_advisor.clear_user_data(user_id)
+        await message.answer("✅ Выход из AI-режима.", reply_markup=get_main_menu())
+        return
+
+    # Проверяем, есть ли данные в кэше
+    if not ai_advisor.get_user_data(user_id):
+        # Если нет, возможно пользователь перезапустил бота – загрузим заново
+        user_data = {
+            "sleep": db._load_json(user_id, "sleep.json"),
+            "checkins": db._load_json(user_id, "checkins.json"),
+            "day_summary": db._load_json(user_id, "day_summary.json"),
+            "notes": db._load_json(user_id, "notes.json"),
+            "reminders": db._load_json(user_id, "reminders.json"),
+        }
+        ai_advisor.set_user_data(user_id, user_data)
+
+    # Отправляем индикатор "печатает"
+    await bot.send_chat_action(message.chat.id, "typing")
+
+    # Получаем ответ на вопрос
+    advice = await ai_advisor.get_advice(user_id, message.text)
+    await message.answer(
+        f"🤖 *Ответ:*\n\n{advice}",
+        parse_mode="Markdown"
+    )
+    # Остаёмся в том же состоянии, чтобы можно было задать ещё вопрос
+
 # ========== НАСТРОЙКИ ==========
 @dp.message_handler(text="⚙️ Настройки")
 async def settings(message: types.Message):
