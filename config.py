@@ -9,4 +9,4 @@ if not os.path.exists(DATA_FOLDER):
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not set. Please export BOT_TOKEN before starting the bot.")
 # AI (OpenAI)
-OPENAI_API_KEY = "your-openai-api-key-here"   # вставь свой ключ
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")   # для AI-советника
