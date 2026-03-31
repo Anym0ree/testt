@@ -3,30 +3,22 @@ import logging
 from typing import Dict, Optional
 
 class AIAdvisor:
-    """Класс для получения AI-советов через DeepSeek API (бесплатно)."""
-
-    def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile", base_url: str = "https://api.groq.com/openai/v1/chat/completions"):
+    def __init__(self, api_key: str, model: str = "deepseek-chat", base_url: str = "https://api.deepseek.com/v1/chat/completions"):
         self.api_key = api_key
         self.model = model
         self.base_url = base_url
-        self.user_context = {}  # временное хранилище для кэша данных (по user_id)
+        self.user_context = {}
 
     def set_user_data(self, user_id: int, data: Dict):
-        """Сохраняет данные пользователя в кэш для последующих вопросов."""
         self.user_context[user_id] = data
 
     def get_user_data(self, user_id: int) -> Optional[Dict]:
-        """Возвращает данные пользователя из кэша."""
         return self.user_context.get(user_id)
 
     def clear_user_data(self, user_id: int):
-        """Очищает кэш пользователя."""
         self.user_context.pop(user_id, None)
 
     async def get_advice(self, user_id: int, user_question: Optional[str] = None) -> str:
-        """
-        Получить совет от AI. Если user_question задан, отвечает на вопрос с учётом данных.
-        """
         if not self.api_key:
             return ("❌ AI-модуль не настроен.\n"
                     "Добавьте API-ключ DeepSeek в config.py (переменная OPENAI_API_KEY).\n"
@@ -80,10 +72,8 @@ class AIAdvisor:
                 return "⚠️ Не удалось связаться с AI-сервисом. Проверьте интернет и настройки."
 
     def _format_user_data(self, data: Dict) -> str:
-        """Форматирует данные пользователя в читаемый текст."""
         lines = []
 
-        # Сон (последние 10 записей)
         sleep = data.get("sleep", [])
         if sleep:
             lines.append("📊 СОН (последние записи):")
@@ -92,7 +82,6 @@ class AIAdvisor:
         else:
             lines.append("📊 Данные о сне отсутствуют.")
 
-        # Чек-ины (последние 10)
         checkins = data.get("checkins", [])
         if checkins:
             lines.append("\n⚡️ ЧЕК-ИНЫ (последние):")
@@ -104,7 +93,6 @@ class AIAdvisor:
         else:
             lines.append("\n⚡️ Чек-ины отсутствуют.")
 
-        # Итоги дня (последние 10)
         summaries = data.get("day_summary", [])
         if summaries:
             lines.append("\n📝 ИТОГИ ДНЯ (последние):")
@@ -115,14 +103,12 @@ class AIAdvisor:
         else:
             lines.append("\n📝 Итоги дня отсутствуют.")
 
-        # Заметки (последние 7)
         notes = data.get("notes", [])
         if notes:
             lines.append("\n📋 ЗАМЕТКИ (последние):")
             for n in notes[-7:]:
                 lines.append(f"  • {n.get('date')}: {n.get('text')[:100]}{'...' if len(n.get('text', '')) > 100 else ''}")
 
-        # Напоминания (активные) – для контекста
         reminders = data.get("reminders", [])
         active_reminders = [r for r in reminders if r.get('is_active')]
         if active_reminders:
