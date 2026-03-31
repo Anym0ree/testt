@@ -1058,7 +1058,7 @@ async def ai_advice_start(message: types.Message, state: FSMContext):
 @dp.message_handler(state=AIState.waiting_question)
 async def ai_question(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    if message.text == "/cancel":
+    if message.text in ("/cancel", "⬅️ Назад"):
         await state.finish()
         ai_advisor.clear_user_data(user_id)
         await message.answer("✅ Выход из AI-режима.", reply_markup=get_main_menu())
