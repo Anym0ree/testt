@@ -67,7 +67,7 @@ def get_note_action_keyboard(note_id):
     buttons = [
         [InlineKeyboardButton(text="📋 Копировать", callback_data=f"note_copy_{note_id}")],
         [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"note_del_{note_id}")],
-        [InlineKeyboardButton(text="⬅️ К списку", callback_data="note_back_to_list")]
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="note_cancel")]   # было note_back_to_list
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
