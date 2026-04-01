@@ -1056,28 +1056,48 @@ def escape_markdown(text: str) -> str:
 @dp.message_handler(text="🤖 AI-совет")
 async def ai_advice_start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    user_data = {
-        "sleep": db._load_json(user_id, "sleep.json"),
-        "checkins": db._load_json(user_id, "checkins.json"),
-        "day_summary": db._load_json(user_id, "day_summary.json"),
-        "notes": db._load_json(user_id, "notes.json"),
-        "reminders": db._load_json(user_id, "reminders.json"),
-    }
-    ai_advisor.set_user_data(user_id, user_data)
 
-    await AIState.waiting_question.set()
-    await message.answer("🤖 *Загружаю ваши данные для анализа...*", parse_mode="Markdown")
-    advice = await ai_advisor.get_advice(user_id)
-    advice = escape_markdown(advice)
-    await message.answer(
-        f"🤖 *Совет AI:*\n\n{advice}",
-        parse_mode="Markdown",
-        reply_markup=get_back_button()
-    )
-    await message.answer(
-        "✏️ *Вы можете задать уточняющий вопрос* или написать /cancel для выхода.",
-        parse_mode="Markdown"
-    )
+    # Проверяем, есть ли уже история диалога в state
+    data = await state.get_data()
+    history = data.get('history', [])
+
+    if not history:
+        # Если история пуста, загружаем данные пользователя
+        user_data = {
+            "sleep": db._load_json(user_id, "sleep.json"),
+            "checkins": db._load_json(user_id, "checkins.json"),
+            "day_summary": db._load_json(user_id, "day_summary.json"),
+            "notes": db._load_json(user_id, "notes.json"),
+            "reminders": db._load_json(user_id, "reminders.json"),
+            "food": db._load_json(user_id, "food.json"),
+            "drinks": db._load_json(user_id, "drinks.json")
+        }
+        ai_advisor.set_user_data(user_id, user_data)
+
+        await AIState.waiting_question.set()
+        await message.answer("🤖 *Загружаю ваши данные для анализа...*", parse_mode="Markdown")
+        advice = await ai_advisor.get_advice(user_id)
+        advice = escape_markdown(advice)
+        await message.answer(
+            f"🤖 *Совет AI:*\n\n{advice}",
+            parse_mode="Markdown",
+            reply_markup=get_back_button()
+        )
+        await message.answer(
+            "✏️ *Вы можете задать уточняющий вопрос* или написать /cancel для выхода.",
+            parse_mode="Markdown"
+        )
+        # Сохраняем начальный совет в историю
+        await state.update_data(history=[{"role": "assistant", "content": advice}])
+    else:
+        # Если история уже есть, просто активируем режим ожидания вопроса
+        await AIState.waiting_question.set()
+        await message.answer(
+            "🤖 *AI-совет активен*. Задайте свой вопрос.\n\n"
+            "Если хотите выйти, напишите /cancel.",
+            parse_mode="Markdown",
+            reply_markup=get_back_button()
+        )
 
 @dp.message_handler(state=AIState.waiting_question)
 async def ai_question(message: types.Message, state: FSMContext):
@@ -1093,6 +1113,7 @@ async def ai_question(message: types.Message, state: FSMContext):
         await message.answer("✅ Выход из AI-режима.", reply_markup=get_main_menu())
         return
 
+    # Убедимся, что данные пользователя загружены
     if not ai_advisor.get_user_data(user_id):
         user_data = {
             "sleep": db._load_json(user_id, "sleep.json"),
@@ -1100,12 +1121,27 @@ async def ai_question(message: types.Message, state: FSMContext):
             "day_summary": db._load_json(user_id, "day_summary.json"),
             "notes": db._load_json(user_id, "notes.json"),
             "reminders": db._load_json(user_id, "reminders.json"),
+            "food": db._load_json(user_id, "food.json"),
+            "drinks": db._load_json(user_id, "drinks.json"),
         }
         ai_advisor.set_user_data(user_id, user_data)
 
+    # Получаем историю из state
+    data = await state.get_data()
+    history = data.get('history', [])
+
+    # Добавляем вопрос пользователя в историю
+    history.append({"role": "user", "content": message.text})
+
     await bot.send_chat_action(message.chat.id, "typing")
-    advice = await ai_advisor.get_advice(user_id, message.text)
+    # Передаём историю в AIAdvisor (метод get_advice должен принимать history)
+    advice = await ai_advisor.get_advice(user_id, message.text, history)
     advice = escape_markdown(advice)
+
+    # Добавляем ответ ассистента в историю
+    history.append({"role": "assistant", "content": advice})
+    await state.update_data(history=history)
+
     await message.answer(
         f"🤖 *Ответ:*\n\n{advice}",
         parse_mode="Markdown",
@@ -1378,14 +1414,12 @@ async def change_city(message: types.Message):
 
 @dp.message_handler(text="🔔 Настройка напоминаний")
 async def reminder_settings_menu(message: types.Message):
-    """Меню для настройки напоминаний (включить/выключить каждый тип)"""
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("🛌 Сон", "⚡️ Чек-ины")
     kb.add("📝 Итог дня", "⬅️ Назад")
     await message.answer("Выбери, что настроить:", reply_markup=kb)
     await ReminderCustomizeStates.waiting.set()
 
-# Состояния для настройки напоминаний
 class ReminderCustomizeStates:
     waiting = 0
     change_sleep_time = 1
@@ -1592,6 +1626,8 @@ async def check_custom_reminders():
         for user_id, settings in all_data.items():
             user_id = int(user_id)
             tz = db.get_user_timezone(user_id)
+            # Логирование для отладки
+            logging.info(f"check_custom: user={user_id}, tz={tz}, now_utc={now_utc}")
             if tz == 0:
                 continue
             user_time = now_utc + timedelta(hours=tz)
