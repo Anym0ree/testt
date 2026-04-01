@@ -918,7 +918,7 @@ async def list_notes(message: types.Message, state: FSMContext):
     for i, note in enumerate(visible, 1):
         note_text = note['text'][:60] + "..." if len(note['text']) > 60 else note['text']
         text += f"{i}. {note_text}\n   📅 {note.get('date','-')} {note.get('time','')}\n\n"
-    text += "\n✏️ *Команды:*\n`копировать 3` — скопировать текст заметки\n`редактировать 2` — изменить заметку\n`удалить 1` — удалить заметку"
+    text += "\n✏️ *Команды:*\n`копировать <номер>` — скопировать текст заметки\n`редактировать <номер>` — изменить заметку\n`удалить <номер>` — удалить заметку\n\n*Пример:* `удалить 2`"
     await message.answer(text, parse_mode="Markdown", reply_markup=get_notes_reminders_main_menu())
 
 # ========== НАПОМИНАНИЯ ==========
@@ -934,7 +934,7 @@ async def list_reminders(message: types.Message, state: FSMContext):
     text = "📋 *Твои основные напоминания:*\n\n"
     for i, r in enumerate(main_reminders, 1):
         text += f"{i}. ⏰ {r['date']} {r['time']} — {r['text'][:50]}\n"
-    text += "\n🗑 *Команды:*\n`редактировать 2` — изменить напоминание\n`удалить 1` — удалить напоминание (вместе с доп.)"
+    text += "\n🗑 *Команды:*\n`редактировать <номер>` — изменить напоминание\n`удалить <номер>` — удалить напоминание (вместе с доп.)\n\n*Пример:* `удалить 2`"
     await message.answer(text, parse_mode="Markdown", reply_markup=get_notes_reminders_main_menu())
 
 # ========== ОБРАБОТЧИКИ КОМАНД ДЛЯ ЗАМЕТОК И НАПОМИНАНИЙ ==========
@@ -1046,7 +1046,7 @@ async def delete_item(message: types.Message, state: FSMContext):
     else:
         await send_temp_message(message.chat.id, "❌ Неизвестный раздел.", 3)
 
-# ========== AI СОВЕТ (ДИАЛОГ) ==========
+# ========== AI СОВЕТ ==========
 def escape_markdown(text: str) -> str:
     chars = r'_*[]()~`>#+-=|{}.!'
     for ch in chars:
@@ -1057,12 +1057,10 @@ def escape_markdown(text: str) -> str:
 async def ai_advice_start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
 
-    # Проверяем, есть ли уже история диалога в state
     data = await state.get_data()
     history = data.get('history', [])
 
     if not history:
-        # Если история пуста, загружаем данные пользователя
         user_data = {
             "sleep": db._load_json(user_id, "sleep.json"),
             "checkins": db._load_json(user_id, "checkins.json"),
@@ -1087,10 +1085,8 @@ async def ai_advice_start(message: types.Message, state: FSMContext):
             "✏️ *Вы можете задать уточняющий вопрос* или написать /cancel для выхода.",
             parse_mode="Markdown"
         )
-        # Сохраняем начальный совет в историю
         await state.update_data(history=[{"role": "assistant", "content": advice}])
     else:
-        # Если история уже есть, просто активируем режим ожидания вопроса
         await AIState.waiting_question.set()
         await message.answer(
             "🤖 *AI-совет активен*. Задайте свой вопрос.\n\n"
@@ -1113,7 +1109,6 @@ async def ai_question(message: types.Message, state: FSMContext):
         await message.answer("✅ Выход из AI-режима.", reply_markup=get_main_menu())
         return
 
-    # Убедимся, что данные пользователя загружены
     if not ai_advisor.get_user_data(user_id):
         user_data = {
             "sleep": db._load_json(user_id, "sleep.json"),
@@ -1126,19 +1121,15 @@ async def ai_question(message: types.Message, state: FSMContext):
         }
         ai_advisor.set_user_data(user_id, user_data)
 
-    # Получаем историю из state
     data = await state.get_data()
     history = data.get('history', [])
 
-    # Добавляем вопрос пользователя в историю
     history.append({"role": "user", "content": message.text})
 
     await bot.send_chat_action(message.chat.id, "typing")
-    # Передаём историю в AIAdvisor (метод get_advice должен принимать history)
     advice = await ai_advisor.get_advice(user_id, message.text, history)
     advice = escape_markdown(advice)
 
-    # Добавляем ответ ассистента в историю
     history.append({"role": "assistant", "content": advice})
     await state.update_data(history=history)
 
@@ -1392,9 +1383,28 @@ async def reminder_setup_ask(message: types.Message, state: FSMContext):
         await state.finish()
         await message.answer("❌ Напоминания выключены", reply_markup=get_main_menu())
         return
-    save_reminder_settings(message.from_user.id, get_default_reminders())
-    await state.finish()
-    await message.answer("✅ Напоминания включены!", reply_markup=get_main_menu())
+
+    # Пользователь выбрал "✅ Да"
+    await message.answer(
+        "Использовать стандартные настройки?\n\n"
+        "🛌 Сон — 09:00\n"
+        "⚡️ Чек-ины — 12:00, 16:00, 20:00\n"
+        "📝 Итог дня — 22:30",
+        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("✅ Да", "✏️ Настроить вручную")
+    )
+    await ReminderSetupStates.choose_mode.set()
+
+@dp.message_handler(state=ReminderSetupStates.choose_mode)
+async def reminder_setup_mode(message: types.Message, state: FSMContext):
+    if message.text == "✅ Да":
+        save_reminder_settings(message.from_user.id, get_default_reminders())
+        await state.finish()
+        await message.answer("✅ Напоминания включены со стандартными настройками!", reply_markup=get_main_menu())
+    elif message.text == "✏️ Настроить вручную":
+        await state.finish()
+        await reminder_settings_menu(message)
+    else:
+        await message.answer("Выбери вариант из кнопок.")
 
 # ========== НАСТРОЙКИ ==========
 @dp.message_handler(text="⚙️ Настройки")
@@ -1626,8 +1636,6 @@ async def check_custom_reminders():
         for user_id, settings in all_data.items():
             user_id = int(user_id)
             tz = db.get_user_timezone(user_id)
-            # Логирование для отладки
-            logging.info(f"check_custom: user={user_id}, tz={tz}, now_utc={now_utc}")
             if tz == 0:
                 continue
             user_time = now_utc + timedelta(hours=tz)
