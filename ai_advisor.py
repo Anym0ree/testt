@@ -43,28 +43,13 @@ class AIAdvisor:
             {"role": "user", "content": f"Вот мои данные за последнее время:\n{user_summary}"}
         ]
 
-        # Если есть история диалога, добавляем её (без системного сообщения и без дублирования вступительного)
         if history:
-            # history уже содержит предыдущие сообщения (включая первый совет AI)
-            # Нужно убедиться, что мы не добавляем вступительное сообщение повторно.
-            # Для простоты добавим историю после начального пользовательского сообщения.
-            # Но чтобы не дублировать, можно заменить messages[1] на None и потом вставить историю.
-            # Лучше: оставляем messages[0] системный, затем добавляем историю, затем добавляем новый вопрос.
-            # Начальное сообщение с данными должно быть только если нет истории, иначе оно уже было.
-            if not history:
-                # нет истории – используем стандартное вступление
-                messages.append({"role": "user", "content": "Пожалуйста, дай общий анализ моего состояния и практические советы."})
-            else:
-                # история есть – добавляем её после системного сообщения, но до нового вопроса
-                # Удаляем стандартное сообщение, если оно было добавлено выше
-                # Создаём новый список: [system] + history + [новый вопрос]
-                new_messages = [messages[0]]  # system
-                new_messages.extend(history)
-                if user_question:
-                    new_messages.append({"role": "user", "content": user_question})
-                messages = new_messages
+            new_messages = [messages[0]]
+            new_messages.extend(history)
+            if user_question:
+                new_messages.append({"role": "user", "content": user_question})
+            messages = new_messages
         else:
-            # нет истории – добавляем стандартное сообщение с данными и вопрос об анализе
             if user_question:
                 messages.append({"role": "user", "content": user_question})
             else:
@@ -132,7 +117,6 @@ class AIAdvisor:
             for n in notes[-7:]:
                 lines.append(f"  • {n.get('date')}: {n.get('text')[:100]}{'...' if len(n.get('text', '')) > 100 else ''}")
 
-        # Добавляем еду и напитки
         food = data.get("food", [])
         if food:
             lines.append("\n🍽 ЕДА (последние записи):")
