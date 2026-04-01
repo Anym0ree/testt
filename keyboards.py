@@ -7,7 +7,6 @@ def get_main_menu():
         [KeyboardButton(text="📝 Итог дня")],
         [KeyboardButton(text="🍽🥤 Еда и напитки")],
         [KeyboardButton(text="📝 Заметки и напоминания")],
-        [KeyboardButton(text="🤖 AI-совет")],
         [KeyboardButton(text="📊 Статистика")],
         [KeyboardButton(text="📤 Экспорт")],
         [KeyboardButton(text="🔄 Конвертер")],
@@ -59,24 +58,15 @@ def get_notes_list_keyboard(notes):
     buttons = []
     for note in notes:
         text = note['text'][:30] + "..." if len(note['text']) > 30 else note['text']
-        buttons.append([InlineKeyboardButton(text=f"📝 {text}", callback_data=f"note_view_{note['id']}")])
+        buttons.append([InlineKeyboardButton(text=f"📝 {text}", callback_data=f"note_select_{note['id']}")])
     buttons.append([InlineKeyboardButton(text="⬅️ К меню заметок", callback_data="close_notes")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_note_action_keyboard(note_id):
     buttons = [
-        [InlineKeyboardButton(text="📋 Копировать", callback_data=f"note_copy_{note_id}")],
+        [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"note_edit_{note_id}")],
         [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"note_del_{note_id}")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="note_cancel")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-def get_confirm_delete_keyboard(item_type, item_id):
-    buttons = [
-        [
-            InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"{item_type}_confirm_del_{item_id}"),
-            InlineKeyboardButton(text="❌ Отмена", callback_data=f"{item_type}_cancel")
-        ]
+        [InlineKeyboardButton(text="⬅️ К списку", callback_data="note_back_to_list")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -85,16 +75,44 @@ def get_reminder_list_keyboard(reminders):
     for r in reminders:
         marker = "🔔" if r.get("parent_id") else "⏰"
         text = f"{marker} {r['date']} {r['time']} — {r['text'][:28]}"
-        buttons.append([InlineKeyboardButton(text=text, callback_data=f"reminder_view_{r['id']}")])
+        buttons.append([InlineKeyboardButton(text=text, callback_data=f"reminder_select_{r['id']}")])
     buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="reminder_back_to_menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def get_reminder_action_keyboard(reminder_id):
+def get_reminder_action_keyboard(reminder_id, is_extra=False):
     buttons = [
-        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"reminder_del_{reminder_id}")],
-        [InlineKeyboardButton(text="⬅️ К списку", callback_data="reminder_back_to_list")]
+        [InlineKeyboardButton(text="✏️ Изменить текст", callback_data=f"reminder_edit_text_{reminder_id}")],
+        [InlineKeyboardButton(text="🕐 Изменить время", callback_data=f"reminder_edit_time_{reminder_id}")],
     ]
+    if not is_extra:
+        buttons.append([InlineKeyboardButton(text="🔔 Доп. напоминание", callback_data=f"reminder_edit_advance_{reminder_id}")])
+    buttons.extend([
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"reminder_delete_{reminder_id}")],
+        [InlineKeyboardButton(text="⬅️ К списку", callback_data="reminder_back_to_list")]
+    ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_reminder_advance_inline_keyboard(reminder_id, current_kind=None):
+    labels = {
+        "day": "⏰ За 1 день",
+        "3h": "⏳ За 3 часа",
+        "1h": "⌛ За 1 час",
+        "none": "🚫 Не надо"
+    }
+    buttons = []
+    for kind in ["day", "3h", "1h", "none"]:
+        prefix = "✅ " if current_kind == kind else ""
+        buttons.append([InlineKeyboardButton(
+            text=f"{prefix}{labels[kind]}",
+            callback_data=f"remadv_set_{reminder_id}_{kind}"
+        )])
+    buttons.append([InlineKeyboardButton(text="⬅️ К напоминанию", callback_data=f"reminder_select_{reminder_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_inline_cancel_button(callback_data):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data=callback_data)]
+    ])
 
 def get_reminder_date_buttons():
     buttons = [
@@ -127,16 +145,15 @@ def get_reminder_advance_buttons():
         [KeyboardButton(text="⏰ За 1 день")],
         [KeyboardButton(text="⏳ За 3 часа")],
         [KeyboardButton(text="⌛ За 1 час")],
-        [KeyboardButton(text="✏️ Своё время")],
         [KeyboardButton(text="🚫 Не надо")],
         [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
-def get_settings_menu_no_reset():
+def get_settings_menu():
     buttons = [
         [KeyboardButton(text="🌍 Сменить город")],
-        [KeyboardButton(text="🔔 Настройка напоминаний")],
+        [KeyboardButton(text="🔄 Сброс данных")],
         [KeyboardButton(text="⬅️ Назад")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
