@@ -90,9 +90,10 @@ class Database:
         if self.has_sleep_today(user_id):
             return False
         data = self._load_json(user_id, "sleep.json")
+        local_dt = self.get_user_local_datetime(user_id)
         record = {
-            "date": self.get_user_local_date(user_id),
-            "timestamp": datetime.utcnow().isoformat(),
+            "date": local_dt.strftime("%Y-%m-%d"),
+            "timestamp": datetime.utcnow().isoformat(),  # UTC для порядка
             "bed_time": bed_time,
             "wake_time": wake_time,
             "quality": quality,
@@ -131,6 +132,7 @@ class Database:
         if self.has_day_summary_for_date(user_id, target_date):
             return False
         data = self._load_json(user_id, "day_summary.json")
+        local_dt = self.get_user_local_datetime(user_id)
         record = {
             "date": target_date,
             "timestamp": datetime.utcnow().isoformat(),
@@ -147,9 +149,10 @@ class Database:
     # === ЧЕК-ИН ===
     def add_checkin(self, user_id, time_slot, energy, stress, emotions, note=""):
         data = self._load_json(user_id, "checkins.json")
+        local_dt = self.get_user_local_datetime(user_id)
         record = {
-            "date": self.get_user_local_date(user_id),
-            "time": datetime.utcnow().strftime("%H:%M"),
+            "date": local_dt.strftime("%Y-%m-%d"),
+            "time": local_dt.strftime("%H:%M"),
             "timestamp": datetime.utcnow().isoformat(),
             "time_slot": time_slot,
             "energy": energy,
@@ -164,9 +167,10 @@ class Database:
     # === ЕДА ===
     def add_food(self, user_id, meal_type, food_text):
         data = self._load_json(user_id, "food.json")
+        local_dt = self.get_user_local_datetime(user_id)
         record = {
-            "date": self.get_user_local_date(user_id),
-            "time": datetime.utcnow().strftime("%H:%M"),
+            "date": local_dt.strftime("%Y-%m-%d"),
+            "time": local_dt.strftime("%H:%M"),
             "timestamp": datetime.utcnow().isoformat(),
             "meal_type": meal_type,
             "food_text": food_text
@@ -178,9 +182,10 @@ class Database:
     # === НАПИТКИ ===
     def add_drink(self, user_id, drink_type, amount):
         data = self._load_json(user_id, "drinks.json")
+        local_dt = self.get_user_local_datetime(user_id)
         record = {
-            "date": self.get_user_local_date(user_id),
-            "time": datetime.utcnow().strftime("%H:%M"),
+            "date": local_dt.strftime("%Y-%m-%d"),
+            "time": local_dt.strftime("%H:%M"),
             "timestamp": datetime.utcnow().isoformat(),
             "drink_type": drink_type,
             "amount": amount
@@ -193,11 +198,12 @@ class Database:
     def add_note(self, user_id, text):
         data = self._load_json(user_id, "notes.json")
         note_id = max([n.get("id", 0) for n in data], default=0) + 1
+        local_dt = self.get_user_local_datetime(user_id)
         record = {
             "id": note_id,
             "text": text,
-            "date": self.get_user_local_date(user_id),
-            "time": datetime.utcnow().strftime("%H:%M"),
+            "date": local_dt.strftime("%Y-%m-%d"),
+            "time": local_dt.strftime("%H:%M"),
             "timestamp": datetime.utcnow().isoformat()
         }
         data.append(record)
@@ -406,9 +412,9 @@ class Database:
         due = []
         for user_id in all_users:
             reminders = self._load_json(user_id, "reminders.json")
-            local_date = self.get_user_local_date(user_id)
-            local_time = datetime.utcnow() + timedelta(hours=self.get_user_timezone(user_id))
-            local_minute = local_time.strftime("%H:%M")
+            local_dt = self.get_user_local_datetime(user_id)
+            local_date = local_dt.strftime("%Y-%m-%d")
+            local_minute = local_dt.strftime("%H:%M")
             for r in reminders:
                 if r.get("is_active", True):
                     if r["date"] == local_date and r["time"] == local_minute:
