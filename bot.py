@@ -14,7 +14,7 @@ from aiogram.dispatcher import FSMContext
 from aiogram.utils import executor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from aiohttp import web  # для простого HTTP-сервера
+from aiohttp import web
 
 from config import BOT_TOKEN, OPENAI_API_KEY
 from database import db
@@ -30,7 +30,6 @@ dp = Dispatcher(bot, storage=storage)
 
 MIN_DELTA = timedelta(minutes=2)
 
-# ========== AI СОВЕТНИК ==========
 ai_advisor = AIAdvisor(api_key=OPENAI_API_KEY)
 
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
@@ -1049,7 +1048,6 @@ async def delete_item(message: types.Message, state: FSMContext):
 
 # ========== AI СОВЕТ (ДИАЛОГ) ==========
 def escape_markdown(text: str) -> str:
-    """Экранирует спецсимволы Markdown в тексте, чтобы Telegram не пытался их интерпретировать."""
     chars = r'_*[]()~`>#+-=|{}.!'
     for ch in chars:
         text = text.replace(ch, '\\' + ch)
@@ -1070,7 +1068,6 @@ async def ai_advice_start(message: types.Message, state: FSMContext):
     await AIState.waiting_question.set()
     await message.answer("🤖 *Загружаю ваши данные для анализа...*", parse_mode="Markdown")
     advice = await ai_advisor.get_advice(user_id)
-    # Экранируем спецсимволы, чтобы избежать иероглифов из-за неправильной интерпретации Markdown
     advice = escape_markdown(advice)
     await message.answer(
         f"🤖 *Совет AI:*\n\n{advice}",
@@ -1359,7 +1356,6 @@ async def reminder_setup_ask(message: types.Message, state: FSMContext):
         await state.finish()
         await message.answer("❌ Напоминания выключены", reply_markup=get_main_menu())
         return
-    # Пользователь выбрал "✅ Да" — используем стандартные настройки
     save_reminder_settings(message.from_user.id, get_default_reminders())
     await state.finish()
     await message.answer("✅ Напоминания включены!", reply_markup=get_main_menu())
@@ -1408,7 +1404,6 @@ async def reminder_customize_choose(message: types.Message, state: FSMContext):
         settings = get_default_reminders()
 
     if message.text == "🛌 Сон":
-        # Предложить включить/выключить и изменить время
         kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
         current_enabled = settings["sleep"]["enabled"]
         kb.add("✅ Включить" if not current_enabled else "❌ Выключить")
@@ -1451,7 +1446,6 @@ async def reminder_customize_choose(message: types.Message, state: FSMContext):
     else:
         await message.answer("Выбери из кнопок.")
 
-# Обработчики подменю для каждого типа напоминаний
 @dp.message_handler(state="sleep_menu")
 async def sleep_menu_action(message: types.Message, state: FSMContext):
     settings = load_reminder_settings(message.from_user.id)
@@ -1522,7 +1516,6 @@ async def checkins_menu_action(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state="change_checkins_times")
 async def change_checkins_times(message: types.Message, state: FSMContext):
-    # Разбираем ввод: разделители запятая, пробел, точка с запятой
     parts = re.split(r'[ ,;]+', message.text)
     times = []
     for part in parts:
@@ -1531,7 +1524,6 @@ async def change_checkins_times(message: types.Message, state: FSMContext):
     if not times:
         await message.answer("❌ Не удалось распознать время. Введи время в формате ЧЧ:ММ через запятую или пробел (например, 12:00, 16:00, 20:00).")
         return
-    # Убираем дубликаты и сортируем
     times = sorted(set(times))
     settings = load_reminder_settings(message.from_user.id)
     if not settings:
