@@ -93,7 +93,7 @@ class Database:
         local_dt = self.get_user_local_datetime(user_id)
         record = {
             "date": local_dt.strftime("%Y-%m-%d"),
-            "timestamp": datetime.utcnow().isoformat(),  # UTC для порядка
+            "timestamp": datetime.utcnow().isoformat(),
             "bed_time": bed_time,
             "wake_time": wake_time,
             "quality": quality,
