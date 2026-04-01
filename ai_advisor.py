@@ -1,6 +1,6 @@
 import aiohttp
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 class AIAdvisor:
     def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile", base_url: str = "https://api.groq.com/openai/v1/chat/completions"):
@@ -18,11 +18,11 @@ class AIAdvisor:
     def clear_user_data(self, user_id: int):
         self.user_context.pop(user_id, None)
 
-    async def get_advice(self, user_id: int, user_question: Optional[str] = None) -> str:
+    async def get_advice(self, user_id: int, user_question: Optional[str] = None, history: Optional[List[Dict]] = None) -> str:
         if not self.api_key:
             return ("❌ AI-модуль не настроен.\n"
-                    "Добавьте API-ключ DeepSeek в config.py (переменная OPENAI_API_KEY).\n"
-                    "Получить ключ можно бесплатно на https://platform.deepseek.com/ после регистрации.")
+                    "Добавьте API-ключ Groq в config.py (переменная OPENAI_API_KEY).\n"
+                    "Получить ключ можно бесплатно на https://console.groq.com/ после регистрации.")
 
         user_data = self.get_user_data(user_id)
         if not user_data:
@@ -30,7 +30,7 @@ class AIAdvisor:
 
         system_prompt = (
             "Ты — дружелюбный и заботливый AI-коуч по саморазвитию. "
-            "На основе предоставленных данных о сне, энергии, стрессе, эмоциях, итогах дня и заметках "
+            "На основе предоставленных данных о сне, энергии, стрессе, эмоциях, итогах дня, заметках, еде и напитках "
             "давай пользователю конкретные, полезные советы для улучшения самочувствия, продуктивности и настроения. "
             "Также можешь подмечать интересные факты из данных, задавать уточняющие вопросы, поддерживать диалог. "
             "Отвечай структурированно, но живо, без излишней воды. Если данных недостаточно, предложи вести записи регулярнее."
@@ -42,10 +42,33 @@ class AIAdvisor:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Вот мои данные за последнее время:\n{user_summary}"}
         ]
-        if user_question:
-            messages.append({"role": "user", "content": user_question})
+
+        # Если есть история диалога, добавляем её (без системного сообщения и без дублирования вступительного)
+        if history:
+            # history уже содержит предыдущие сообщения (включая первый совет AI)
+            # Нужно убедиться, что мы не добавляем вступительное сообщение повторно.
+            # Для простоты добавим историю после начального пользовательского сообщения.
+            # Но чтобы не дублировать, можно заменить messages[1] на None и потом вставить историю.
+            # Лучше: оставляем messages[0] системный, затем добавляем историю, затем добавляем новый вопрос.
+            # Начальное сообщение с данными должно быть только если нет истории, иначе оно уже было.
+            if not history:
+                # нет истории – используем стандартное вступление
+                messages.append({"role": "user", "content": "Пожалуйста, дай общий анализ моего состояния и практические советы."})
+            else:
+                # история есть – добавляем её после системного сообщения, но до нового вопроса
+                # Удаляем стандартное сообщение, если оно было добавлено выше
+                # Создаём новый список: [system] + history + [новый вопрос]
+                new_messages = [messages[0]]  # system
+                new_messages.extend(history)
+                if user_question:
+                    new_messages.append({"role": "user", "content": user_question})
+                messages = new_messages
         else:
-            messages.append({"role": "user", "content": "Пожалуйста, дай общий анализ моего состояния и практические советы."})
+            # нет истории – добавляем стандартное сообщение с данными и вопрос об анализе
+            if user_question:
+                messages.append({"role": "user", "content": user_question})
+            else:
+                messages.append({"role": "user", "content": "Пожалуйста, дай общий анализ моего состояния и практические советы."})
 
         async with aiohttp.ClientSession() as session:
             headers = {
@@ -108,6 +131,23 @@ class AIAdvisor:
             lines.append("\n📋 ЗАМЕТКИ (последние):")
             for n in notes[-7:]:
                 lines.append(f"  • {n.get('date')}: {n.get('text')[:100]}{'...' if len(n.get('text', '')) > 100 else ''}")
+
+        # Добавляем еду и напитки
+        food = data.get("food", [])
+        if food:
+            lines.append("\n🍽 ЕДА (последние записи):")
+            for f in food[-10:]:
+                lines.append(f"  • {f.get('date')} {f.get('time')}: {f.get('meal_type')} — {f.get('food_text')[:80]}")
+        else:
+            lines.append("\n🍽 Данные о еде отсутствуют.")
+
+        drinks = data.get("drinks", [])
+        if drinks:
+            lines.append("\n🥤 НАПИТКИ (последние записи):")
+            for d in drinks[-10:]:
+                lines.append(f"  • {d.get('date')} {d.get('time')}: {d.get('drink_type')} — {d.get('amount')}")
+        else:
+            lines.append("\n🥤 Данные о напитках отсутствуют.")
 
         reminders = data.get("reminders", [])
         active_reminders = [r for r in reminders if r.get('is_active')]
