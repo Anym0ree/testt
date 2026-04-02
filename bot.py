@@ -1045,7 +1045,6 @@ async def delete_item(message: types.Message, state: FSMContext):
         await send_temp_message(message.chat.id, f"✅ Напоминание {index} и связанные с ним удалены.", 3)
     else:
         await send_temp_message(message.chat.id, "❌ Неизвестный раздел.", 3)
-
 # ========== AI СОВЕТ ==========
 def escape_markdown(text: str) -> str:
     chars = r'_*[]()~`>#+-=|{}.!'
