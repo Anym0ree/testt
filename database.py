@@ -1,3 +1,4 @@
+import sqlite3
 import json
 import os
 import logging
@@ -9,99 +10,196 @@ logging.basicConfig(level=logging.INFO)
 class Database:
     def __init__(self):
         self.data_folder = DATA_FOLDER
-
-    def _get_user_folder(self, user_id):
-        return os.path.join(self.data_folder, str(user_id))
-
-    def _get_user_file(self, user_id, filename):
-        user_folder = self._get_user_folder(user_id)
-        if not os.path.exists(user_folder):
-            os.makedirs(user_folder)
-        return os.path.join(user_folder, filename)
-
-    def _load_json(self, user_id, filename):
-        file_path = self._get_user_file(user_id, filename)
-        if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return []
-
-    def _save_json(self, user_id, filename, data):
-        file_path = self._get_user_file(user_id, filename)
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-    def _get_all_user_folders(self):
         if not os.path.exists(self.data_folder):
-            return []
-        return [int(folder) for folder in os.listdir(self.data_folder) if folder.isdigit()]
+            os.makedirs(self.data_folder)
+        self.db_path = os.path.join(self.data_folder, "bot.db")
+        self._init_db()
 
-    # === ЧАСОВОЙ ПОЯС ===
-    def set_user_timezone(self, user_id, timezone_offset):
-        user_folder = self._get_user_folder(user_id)
-        if not os.path.exists(user_folder):
-            os.makedirs(user_folder)
-        file_path = os.path.join(user_folder, "user_settings.json")
-        settings = {}
-        if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-        settings["timezone_offset"] = timezone_offset
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(settings, f, ensure_ascii=False, indent=2)
+    def _get_connection(self):
+        return sqlite3.connect(self.db_path)
 
+    def _init_db(self):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        # Таблица пользователей
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                timezone_offset INTEGER DEFAULT 0,
+                created_at TEXT
+            )
+        ''')
+        
+        # Таблица сна
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sleep (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                date TEXT,
+                timestamp TEXT,
+                bed_time TEXT,
+                wake_time TEXT,
+                quality INTEGER,
+                woke_night INTEGER,
+                note TEXT
+            )
+        ''')
+        
+        # Таблица чек-инов
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS checkins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                date TEXT,
+                time TEXT,
+                timestamp TEXT,
+                time_slot TEXT,
+                energy INTEGER,
+                stress INTEGER,
+                emotions TEXT,
+                note TEXT
+            )
+        ''')
+        
+        # Таблица итогов дня
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS day_summary (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                date TEXT,
+                timestamp TEXT,
+                score INTEGER,
+                best TEXT,
+                worst TEXT,
+                gratitude TEXT,
+                note TEXT
+            )
+        ''')
+        
+        # Таблица еды
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS food (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                date TEXT,
+                time TEXT,
+                timestamp TEXT,
+                meal_type TEXT,
+                food_text TEXT
+            )
+        ''')
+        
+        # Таблица напитков
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS drinks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                date TEXT,
+                time TEXT,
+                timestamp TEXT,
+                drink_type TEXT,
+                amount TEXT
+            )
+        ''')
+        
+        # Таблица заметок
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                text TEXT,
+                date TEXT,
+                time TEXT,
+                timestamp TEXT
+            )
+        ''')
+        
+        # Таблица напоминаний
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS reminders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                text TEXT,
+                date TEXT,
+                time TEXT,
+                advance_type TEXT,
+                parent_id INTEGER,
+                is_custom INTEGER DEFAULT 0,
+                is_active INTEGER DEFAULT 1,
+                created_at TEXT
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+
+    # === ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ===
     def get_user_timezone(self, user_id):
-        user_folder = self._get_user_folder(user_id)
-        file_path = os.path.join(user_folder, "user_settings.json")
-        if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-                return settings.get("timezone_offset", 0)
-        return 0
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT timezone_offset FROM users WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else 0
 
-    def get_user_local_hour(self, user_id):
-        offset = self.get_user_timezone(user_id)
-        utc_hour = datetime.utcnow().hour
-        local_hour = (utc_hour + offset) % 24
-        return local_hour
-
-    def get_user_local_date(self, user_id):
-        offset = self.get_user_timezone(user_id)
-        utc_now = datetime.utcnow()
-        local_now = utc_now + timedelta(hours=offset)
-        return local_now.strftime("%Y-%m-%d")
+    def set_user_timezone(self, user_id, timezone_offset):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO users (user_id, timezone_offset, created_at)
+            VALUES (?, ?, COALESCE((SELECT created_at FROM users WHERE user_id = ?), ?))
+        ''', (user_id, timezone_offset, user_id, datetime.utcnow().isoformat()))
+        conn.commit()
+        conn.close()
 
     def get_user_local_datetime(self, user_id):
         offset = self.get_user_timezone(user_id)
         utc_now = datetime.utcnow()
-        local_now = utc_now + timedelta(hours=offset)
-        return local_now
+        return utc_now + timedelta(hours=offset)
+
+    def get_user_local_date(self, user_id):
+        return self.get_user_local_datetime(user_id).strftime("%Y-%m-%d")
+
+    def get_user_local_hour(self, user_id):
+        return self.get_user_local_datetime(user_id).hour
 
     # === СОН ===
     def has_sleep_today(self, user_id):
-        data = self._load_json(user_id, "sleep.json")
         today = self.get_user_local_date(user_id)
-        for record in data:
-            if record.get("date") == today:
-                return True
-        return False
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM sleep WHERE user_id = ? AND date = ? LIMIT 1", (user_id, today))
+        result = cursor.fetchone() is not None
+        conn.close()
+        return result
 
     def add_sleep(self, user_id, bed_time, wake_time, quality, woke_night, note=""):
         if self.has_sleep_today(user_id):
             return False
-        data = self._load_json(user_id, "sleep.json")
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO sleep (user_id, date, timestamp, bed_time, wake_time, quality, woke_night, note)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, self.get_user_local_date(user_id), datetime.utcnow().isoformat(),
+              bed_time, wake_time, quality, 1 if woke_night else 0, note))
+        conn.commit()
+        conn.close()
+        return True
+
+    # === ЧЕК-ИН ===
+    def add_checkin(self, user_id, time_slot, energy, stress, emotions, note=""):
+        conn = self._get_connection()
+        cursor = conn.cursor()
         local_dt = self.get_user_local_datetime(user_id)
-        record = {
-            "date": local_dt.strftime("%Y-%m-%d"),
-            "timestamp": datetime.utcnow().isoformat(),
-            "bed_time": bed_time,
-            "wake_time": wake_time,
-            "quality": quality,
-            "woke_night": woke_night,
-            "note": note
-        }
-        data.append(record)
-        self._save_json(user_id, "sleep.json", data)
+        cursor.execute('''
+            INSERT INTO checkins (user_id, date, time, timestamp, time_slot, energy, stress, emotions, note)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"),
+              datetime.utcnow().isoformat(), time_slot, energy, stress, json.dumps(emotions, ensure_ascii=False), note))
+        conn.commit()
+        conn.close()
         return True
 
     # === ИТОГ ДНЯ ===
@@ -119,116 +217,86 @@ class Database:
             return None
 
     def has_day_summary_for_date(self, user_id, date_str):
-        data = self._load_json(user_id, "day_summary.json")
-        for record in data:
-            if record.get("date") == date_str:
-                return True
-        return False
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM day_summary WHERE user_id = ? AND date = ? LIMIT 1", (user_id, date_str))
+        result = cursor.fetchone() is not None
+        conn.close()
+        return result
 
     def add_day_summary(self, user_id, score, best, worst, gratitude, note=""):
         target_date = self.get_target_date_for_summary(user_id)
-        if target_date is None:
+        if target_date is None or self.has_day_summary_for_date(user_id, target_date):
             return False
-        if self.has_day_summary_for_date(user_id, target_date):
-            return False
-        data = self._load_json(user_id, "day_summary.json")
-        local_dt = self.get_user_local_datetime(user_id)
-        record = {
-            "date": target_date,
-            "timestamp": datetime.utcnow().isoformat(),
-            "score": score,
-            "best": best,
-            "worst": worst,
-            "gratitude": gratitude,
-            "note": note
-        }
-        data.append(record)
-        self._save_json(user_id, "day_summary.json", data)
-        return True
-
-    # === ЧЕК-ИН ===
-    def add_checkin(self, user_id, time_slot, energy, stress, emotions, note=""):
-        data = self._load_json(user_id, "checkins.json")
-        local_dt = self.get_user_local_datetime(user_id)
-        record = {
-            "date": local_dt.strftime("%Y-%m-%d"),
-            "time": local_dt.strftime("%H:%M"),
-            "timestamp": datetime.utcnow().isoformat(),
-            "time_slot": time_slot,
-            "energy": energy,
-            "stress": stress,
-            "emotions": emotions,
-            "note": note
-        }
-        data.append(record)
-        self._save_json(user_id, "checkins.json", data)
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO day_summary (user_id, date, timestamp, score, best, worst, gratitude, note)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, target_date, datetime.utcnow().isoformat(), score, best, worst, gratitude, note))
+        conn.commit()
+        conn.close()
         return True
 
     # === ЕДА ===
     def add_food(self, user_id, meal_type, food_text):
-        data = self._load_json(user_id, "food.json")
+        conn = self._get_connection()
+        cursor = conn.cursor()
         local_dt = self.get_user_local_datetime(user_id)
-        record = {
-            "date": local_dt.strftime("%Y-%m-%d"),
-            "time": local_dt.strftime("%H:%M"),
-            "timestamp": datetime.utcnow().isoformat(),
-            "meal_type": meal_type,
-            "food_text": food_text
-        }
-        data.append(record)
-        self._save_json(user_id, "food.json", data)
+        cursor.execute('''
+            INSERT INTO food (user_id, date, time, timestamp, meal_type, food_text)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (user_id, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"),
+              datetime.utcnow().isoformat(), meal_type, food_text))
+        conn.commit()
+        conn.close()
         return True
 
     # === НАПИТКИ ===
     def add_drink(self, user_id, drink_type, amount):
-        data = self._load_json(user_id, "drinks.json")
+        conn = self._get_connection()
+        cursor = conn.cursor()
         local_dt = self.get_user_local_datetime(user_id)
-        record = {
-            "date": local_dt.strftime("%Y-%m-%d"),
-            "time": local_dt.strftime("%H:%M"),
-            "timestamp": datetime.utcnow().isoformat(),
-            "drink_type": drink_type,
-            "amount": amount
-        }
-        data.append(record)
-        self._save_json(user_id, "drinks.json", data)
+        cursor.execute('''
+            INSERT INTO drinks (user_id, date, time, timestamp, drink_type, amount)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (user_id, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"),
+              datetime.utcnow().isoformat(), drink_type, amount))
+        conn.commit()
+        conn.close()
         return True
 
     # === ЗАМЕТКИ ===
     def add_note(self, user_id, text):
-        data = self._load_json(user_id, "notes.json")
-        note_id = max([n.get("id", 0) for n in data], default=0) + 1
+        conn = self._get_connection()
+        cursor = conn.cursor()
         local_dt = self.get_user_local_datetime(user_id)
-        record = {
-            "id": note_id,
-            "text": text,
-            "date": local_dt.strftime("%Y-%m-%d"),
-            "time": local_dt.strftime("%H:%M"),
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        data.append(record)
-        self._save_json(user_id, "notes.json", data)
+        cursor.execute('''
+            INSERT INTO notes (user_id, text, date, time, timestamp)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (user_id, text, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"),
+              datetime.utcnow().isoformat()))
+        conn.commit()
+        note_id = cursor.lastrowid
+        conn.close()
         return note_id
 
     def get_notes(self, user_id):
-        return self._load_json(user_id, "notes.json")
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, text, date, time, timestamp FROM notes WHERE user_id = ? ORDER BY id DESC", (user_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3], "timestamp": r[4]} for r in rows]
 
     def delete_note_by_id(self, user_id, note_id):
-        notes = self._load_json(user_id, "notes.json")
-        new_notes = [n for n in notes if n.get("id") != note_id]
-        if len(new_notes) != len(notes):
-            self._save_json(user_id, "notes.json", new_notes)
-            return True
-        return False
-
-    def update_note_text(self, user_id, note_id, new_text):
-        notes = self._load_json(user_id, "notes.json")
-        for note in notes:
-            if note.get("id") == note_id:
-                note["text"] = new_text
-                self._save_json(user_id, "notes.json", notes)
-                return True
-        return False
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM notes WHERE user_id = ? AND id = ?", (user_id, note_id))
+        affected = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return affected > 0
 
     # === НАПОМИНАНИЯ ===
     def add_reminder(self, user_id, text, target_date, target_time, advance_type=None, parent_id=None, is_custom=False):
@@ -236,309 +304,256 @@ class Database:
         target_dt = datetime.strptime(f"{target_date} {target_time}", "%Y-%m-%d %H:%M")
         if target_dt < local_dt:
             return None
-    
-        reminders = self._load_json(user_id, "reminders.json")
-        reminder_id = max([r.get("id", 0) for r in reminders], default=0) + 1
-        reminder = {
-            "id": reminder_id,
-            "text": text,
-            "date": target_date,
-            "time": target_time,
-            "is_active": True,
-            "created_at": datetime.utcnow().isoformat()
-        }
-        if parent_id:
-            reminder["parent_id"] = parent_id
-            if is_custom:
-                reminder["is_custom"] = True
-        else:
-            reminder["advance_type"] = advance_type
-    
-        reminders.append(reminder)
-        self._save_json(user_id, "reminders.json", reminders)
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO reminders (user_id, text, date, time, advance_type, parent_id, is_custom, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, text, target_date, target_time, advance_type, parent_id, 1 if is_custom else 0,
+              datetime.utcnow().isoformat()))
+        conn.commit()
+        reminder_id = cursor.lastrowid
+        conn.close()
         return reminder_id
-    
-    def _get_advance_datetime(self, target_date, target_time, advance_type):
-        target = datetime.strptime(f"{target_date} {target_time}", "%Y-%m-%d %H:%M")
-        if advance_type == "day":
-            advance = target - timedelta(days=1)
-        elif advance_type == "3h":
-            advance = target - timedelta(hours=3)
-        elif advance_type == "1h":
-            advance = target - timedelta(hours=1)
-        else:
-            return target
-        return advance
 
     def get_active_reminders(self, user_id):
-        reminders = self._load_json(user_id, "reminders.json")
-        active = [r for r in reminders if r.get("is_active", True)]
-        active.sort(key=lambda r: f"{r.get('date', '')} {r.get('time', '')}")
-        return active
-
-    def get_parent_reminder_id(self, reminders, reminder_id):
-        selected = next((r for r in reminders if r.get("id") == reminder_id), None)
-        if not selected:
-            return None
-        return selected.get("parent_id") or selected.get("id")
-
-    def _get_related_reminder_ids(self, reminders, reminder_id):
-        selected = next((r for r in reminders if r.get("id") == reminder_id), None)
-        if not selected:
-            return []
-        if selected.get("parent_id"):
-            parent_id = selected["parent_id"]
-        else:
-            parent_id = selected["id"]
-        related_ids = [r["id"] for r in reminders if r.get("id") == parent_id or r.get("parent_id") == parent_id]
-        return related_ids
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, text, date, time, advance_type, parent_id, is_custom
+            FROM reminders WHERE user_id = ? AND is_active = 1
+            ORDER BY date, time
+        ''', (user_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3],
+                 "advance_type": r[4], "parent_id": r[5], "is_custom": r[6]} for r in rows]
 
     def delete_reminder(self, user_id, reminder_id):
-        reminders = self._load_json(user_id, "reminders.json")
-        selected = next((r for r in reminders if r.get("id") == reminder_id), None)
-        if not selected:
-            return False
-
-        if selected.get("parent_id"):
-            selected["is_active"] = False
-        else:
-            related_ids = self._get_related_reminder_ids(reminders, reminder_id)
-            for r in reminders:
-                if r.get("id") in related_ids:
-                    r["is_active"] = False
-        self._save_json(user_id, "reminders.json", reminders)
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE reminders SET is_active = 0 WHERE user_id = ? AND (id = ? OR parent_id = ?)",
+                      (user_id, reminder_id, reminder_id))
+        conn.commit()
+        conn.close()
         return True
 
-    def update_reminder_text(self, user_id, reminder_id, new_text):
-        reminders = self._load_json(user_id, "reminders.json")
-        related_ids = self._get_related_reminder_ids(reminders, reminder_id)
-        target = next((r for r in reminders if r.get("id") == reminder_id), None)
-        if not target:
-            return False
-        target["text"] = new_text
-        if target.get("parent_id"):
-            self._save_json(user_id, "reminders.json", reminders)
-            return True
-
-        for r in reminders:
-            if r.get("id") in related_ids and r.get("id") != reminder_id:
-                kind = r.get("advance_kind", "day")
-                if kind == "day":
-                    r["text"] = f"⚠️ ЗА ДЕНЬ: {new_text}"
-                elif kind == "3h":
-                    r["text"] = f"⚠️ ЗА 3 ЧАСА: {new_text}"
-                elif kind == "1h":
-                    r["text"] = f"⚠️ ЗА 1 ЧАС: {new_text}"
-        self._save_json(user_id, "reminders.json", reminders)
-        return True
-
-    def update_reminder_time(self, user_id, reminder_id, new_date, new_time):
-        reminders = self._load_json(user_id, "reminders.json")
-        target = next((r for r in reminders if r.get("id") == reminder_id), None)
-        if not target:
-            return False
-        target["date"] = new_date
-        target["time"] = new_time
-        if target.get("parent_id"):
-            self._save_json(user_id, "reminders.json", reminders)
-            return True
-
-        related_ids = self._get_related_reminder_ids(reminders, reminder_id)
-        for r in reminders:
-            if r.get("id") in related_ids and r.get("id") != reminder_id:
-                kind = r.get("advance_kind")
-                if not kind:
-                    continue
-                adv_dt = self._get_advance_datetime(new_date, new_time, kind)
-                r["date"] = adv_dt.strftime("%Y-%m-%d")
-                r["time"] = adv_dt.strftime("%H:%M")
-        self._save_json(user_id, "reminders.json", reminders)
-        return True
-
-    def update_reminder_advance(self, user_id, reminder_id, advance_type):
-        reminders = self._load_json(user_id, "reminders.json")
-        parent_id = self.get_parent_reminder_id(reminders, reminder_id)
-        if not parent_id:
-            return False
-
-        parent = next((r for r in reminders if r.get("id") == parent_id), None)
-        if not parent:
-            return False
-
-        if not advance_type:
-            children = [r for r in reminders if r.get("parent_id") == parent_id and r.get("is_active", True)]
-            for child in children:
-                child["is_active"] = False
-            parent["advance_type"] = None
-            self._save_json(user_id, "reminders.json", reminders)
-            return True
-
-        adv_dt = self._get_advance_datetime(parent["date"], parent["time"], advance_type)
-        local_dt = self.get_user_local_datetime(user_id)
-        if adv_dt < local_dt:
-            return False
-
-        children = [r for r in reminders if r.get("parent_id") == parent_id and r.get("is_active", True)]
-        for child in children:
-            child["is_active"] = False
-
-        parent["advance_type"] = advance_type
-        next_id = max([r.get("id", 0) for r in reminders], default=0) + 1
-        prefix = "⚠️ ЗА ДЕНЬ" if advance_type == "day" else "⚠️ ЗА 3 ЧАСА" if advance_type == "3h" else "⚠️ ЗА 1 ЧАС"
-        reminders.append({
-            "id": next_id,
-            "text": f"{prefix}: {parent['text']}",
-            "date": adv_dt.strftime("%Y-%m-%d"),
-            "time": adv_dt.strftime("%H:%M"),
-            "advance_type": None,
-            "advance_kind": advance_type,
-            "is_active": True,
-            "parent_id": parent_id,
-            "created_at": datetime.utcnow().isoformat()
-        })
-        self._save_json(user_id, "reminders.json", reminders)
-        return True
-
-    def get_reminder_by_id(self, user_id, reminder_id):
-        reminders = self._load_json(user_id, "reminders.json")
-        for r in reminders:
-            if r.get("id") == reminder_id:
-                return r
-        return None
-
-    # === УВЕДОМЛЕНИЯ ===
     def get_reminders_due_now(self):
-        all_users = self._get_all_user_folders()
+        conn = self._get_connection()
+        cursor = conn.cursor()
         due = []
-        for user_id in all_users:
-            reminders = self._load_json(user_id, "reminders.json")
+        # Получаем всех пользователей с активными напоминаниями
+        cursor.execute("SELECT DISTINCT user_id FROM reminders WHERE is_active = 1")
+        users = cursor.fetchall()
+        for (user_id,) in users:
             local_dt = self.get_user_local_datetime(user_id)
             local_date = local_dt.strftime("%Y-%m-%d")
             local_minute = local_dt.strftime("%H:%M")
+            cursor.execute('''
+                SELECT id, text FROM reminders
+                WHERE user_id = ? AND is_active = 1 AND date = ? AND time = ?
+            ''', (user_id, local_date, local_minute))
+            reminders = cursor.fetchall()
             for r in reminders:
-                if r.get("is_active", True):
-                    if r["date"] == local_date and r["time"] == local_minute:
-                        due.append((user_id, r))
+                due.append((user_id, {"id": r[0], "text": r[1]}))
+        conn.close()
         return due
 
     def mark_reminder_sent(self, user_id, reminder_id):
-        reminders = self._load_json(user_id, "reminders.json")
-        for r in reminders:
-            if r.get("id") == reminder_id:
-                r["is_active"] = False
-                break
-        self._save_json(user_id, "reminders.json", reminders)
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE reminders SET is_active = 0 WHERE user_id = ? AND id = ?", (user_id, reminder_id))
+        conn.commit()
+        conn.close()
 
     # === ОБЪЕДИНЁННЫЙ СПИСОК ЕДЫ И НАПИТКОВ ===
     def get_today_food_and_drinks(self, user_id):
-        food = self._load_json(user_id, "food.json")
-        drinks = self._load_json(user_id, "drinks.json")
         today = self.get_user_local_date(user_id)
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT time, meal_type, food_text FROM food WHERE user_id = ? AND date = ?", (user_id, today))
+        food_rows = cursor.fetchall()
+        
+        cursor.execute("SELECT time, drink_type, amount FROM drinks WHERE user_id = ? AND date = ?", (user_id, today))
+        drink_rows = cursor.fetchall()
+        
+        conn.close()
+        
         combined = []
-        for f in food:
-            if f.get("date") == today:
-                combined.append({
-                    "type": "🍽 Еда",
-                    "time": f.get("time", "00:00"),
-                    "text": f"{f['meal_type']}: {f['food_text']}"
-                })
-        for d in drinks:
-            if d.get("date") == today:
-                combined.append({
-                    "type": "🥤 Напитки",
-                    "time": d.get("time", "00:00"),
-                    "text": f"{d['drink_type']}: {d['amount']}"
-                })
+        for r in food_rows:
+            combined.append({"type": "🍽 Еда", "time": r[0], "text": f"{r[1]}: {r[2]}"})
+        for r in drink_rows:
+            combined.append({"type": "🥤 Напитки", "time": r[0], "text": f"{r[1]}: {r[2]}"})
         combined.sort(key=lambda x: x["time"])
         return combined
 
-    def get_today_food(self, user_id):
-        food = self._load_json(user_id, "food.json")
-        today = self.get_user_local_date(user_id)
-        today_food = [f for f in food if f.get("date") == today]
-        today_food.sort(key=lambda x: x.get('time', '00:00'))
-        return today_food
-
-    def get_today_drinks(self, user_id):
-        drinks = self._load_json(user_id, "drinks.json")
-        today = self.get_user_local_date(user_id)
-        today_drinks = [d for d in drinks if d.get("date") == today]
-        today_drinks.sort(key=lambda x: x.get('time', '00:00'))
-        return today_drinks
-
     # === СТАТИСТИКА ===
     def get_stats(self, user_id):
-        sleep = self._load_json(user_id, "sleep.json")
-        checkins = self._load_json(user_id, "checkins.json")
-        food = self._load_json(user_id, "food.json")
-        drinks = self._load_json(user_id, "drinks.json")
-        notes = self._load_json(user_id, "notes.json")
-        reminders = self._load_json(user_id, "reminders.json")
-
-        text = "📊 ТВОЯ СТАТИСТИКА\n\n"
-        text += f"😴 Сон: {len(sleep)} записей\n"
-        text += f"⚡️ Чек-ины: {len(checkins)} записей\n"
-        text += f"🍽 Еда: {len(food)} записей\n"
-        text += f"🥤 Напитки: {len(drinks)} записей\n"
-        text += f"📝 Заметки: {len(notes)} записей\n"
-        text += f"⏰ Напоминания: {len(reminders)} записей\n"
-
-        if sleep:
-            last = sleep[-1]
-            text += f"\n😴 Последний сон:\n   Лег: {last.get('bed_time')}, встал: {last.get('wake_time')}\n   Качество: {last.get('quality')}/10"
-        if checkins:
-            last = checkins[-1]
-            emotions_str = ", ".join(last.get('emotions', []))
-            text += f"\n\n⚡️ Последний чек-ин:\n   Энергия: {last.get('energy')}/10, стресс: {last.get('stress')}/10\n   Эмоции: {emotions_str}"
-
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT COUNT(*) FROM sleep WHERE user_id = ?", (user_id,))
+        sleep_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM checkins WHERE user_id = ?", (user_id,))
+        checkins_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM food WHERE user_id = ?", (user_id,))
+        food_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM drinks WHERE user_id = ?", (user_id,))
+        drinks_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM notes WHERE user_id = ?", (user_id,))
+        notes_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM reminders WHERE user_id = ? AND is_active = 1", (user_id,))
+        reminders_count = cursor.fetchone()[0]
+        
+        # Последний сон
+        cursor.execute('''
+            SELECT bed_time, wake_time, quality FROM sleep
+            WHERE user_id = ? ORDER BY id DESC LIMIT 1
+        ''', (user_id,))
+        last_sleep = cursor.fetchone()
+        
+        # Последний чек-ин
+        cursor.execute('''
+            SELECT energy, stress, emotions FROM checkins
+            WHERE user_id = ? ORDER BY id DESC LIMIT 1
+        ''', (user_id,))
+        last_checkin = cursor.fetchone()
+        
+        conn.close()
+        
+        text = f"📊 ТВОЯ СТАТИСТИКА\n\n"
+        text += f"😴 Сон: {sleep_count} записей\n"
+        text += f"⚡️ Чек-ины: {checkins_count} записей\n"
+        text += f"🍽 Еда: {food_count} записей\n"
+        text += f"🥤 Напитки: {drinks_count} записей\n"
+        text += f"📝 Заметки: {notes_count} записей\n"
+        text += f"⏰ Активных напоминаний: {reminders_count}\n"
+        
+        if last_sleep:
+            text += f"\n😴 Последний сон:\n   Лег: {last_sleep[0]}, встал: {last_sleep[1]}\n   Качество: {last_sleep[2]}/10"
+        if last_checkin:
+            emotions = json.loads(last_checkin[2]) if last_checkin[2] else []
+            emotions_str = ", ".join(emotions) or "не указаны"
+            text += f"\n\n⚡️ Последний чек-ин:\n   Энергия: {last_checkin[0]}/10, стресс: {last_checkin[1]}/10\n   Эмоции: {emotions_str}"
+        
         return text
 
     # === ЭКСПОРТ ===
     def export_all(self, user_id):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
         export_data = {
             "user_id": user_id,
             "export_date": datetime.utcnow().isoformat(),
-            "sleep": self._load_json(user_id, "sleep.json"),
-            "checkins": self._load_json(user_id, "checkins.json"),
-            "day_summary": self._load_json(user_id, "day_summary.json"),
-            "food": self._load_json(user_id, "food.json"),
-            "drinks": self._load_json(user_id, "drinks.json"),
-            "notes": self._load_json(user_id, "notes.json"),
-            "reminders": self._load_json(user_id, "reminders.json")
+            "sleep": [],
+            "checkins": [],
+            "day_summary": [],
+            "food": [],
+            "drinks": [],
+            "notes": [],
+            "reminders": []
         }
-
+        
+        cursor.execute("SELECT date, bed_time, wake_time, quality, woke_night, note FROM sleep WHERE user_id = ?", (user_id,))
+        for row in cursor.fetchall():
+            export_data["sleep"].append({"date": row[0], "bed_time": row[1], "wake_time": row[2],
+                                         "quality": row[3], "woke_night": bool(row[4]), "note": row[5]})
+        
+        cursor.execute("SELECT date, time, time_slot, energy, stress, emotions, note FROM checkins WHERE user_id = ?", (user_id,))
+        for row in cursor.fetchall():
+            export_data["checkins"].append({"date": row[0], "time": row[1], "time_slot": row[2],
+                                            "energy": row[3], "stress": row[4],
+                                            "emotions": json.loads(row[5]) if row[5] else [], "note": row[6]})
+        
+        cursor.execute("SELECT date, score, best, worst, gratitude, note FROM day_summary WHERE user_id = ?", (user_id,))
+        for row in cursor.fetchall():
+            export_data["day_summary"].append({"date": row[0], "score": row[1], "best": row[2],
+                                               "worst": row[3], "gratitude": row[4], "note": row[5]})
+        
+        cursor.execute("SELECT date, time, meal_type, food_text FROM food WHERE user_id = ?", (user_id,))
+        for row in cursor.fetchall():
+            export_data["food"].append({"date": row[0], "time": row[1], "meal_type": row[2], "food_text": row[3]})
+        
+        cursor.execute("SELECT date, time, drink_type, amount FROM drinks WHERE user_id = ?", (user_id,))
+        for row in cursor.fetchall():
+            export_data["drinks"].append({"date": row[0], "time": row[1], "drink_type": row[2], "amount": row[3]})
+        
+        cursor.execute("SELECT text, date, time, timestamp FROM notes WHERE user_id = ?", (user_id,))
+        for row in cursor.fetchall():
+            export_data["notes"].append({"text": row[0], "date": row[1], "time": row[2], "timestamp": row[3]})
+        
+        cursor.execute("SELECT text, date, time, advance_type, parent_id, is_custom FROM reminders WHERE user_id = ? AND is_active = 1", (user_id,))
+        for row in cursor.fetchall():
+            export_data["reminders"].append({"text": row[0], "date": row[1], "time": row[2],
+                                             "advance_type": row[3], "parent_id": row[4], "is_custom": bool(row[5])})
+        
+        conn.close()
+        
         file_path = os.path.join(self.data_folder, str(user_id), "export_all.json")
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(export_data, f, ensure_ascii=False, indent=2)
-
+        
         return file_path
 
-    # === СБРОС ===
-    def reset_user_data(self, user_id):
-        user_folder = self._get_user_folder(user_id)
-        if not os.path.exists(user_folder):
-            logging.info(f"Сброс данных: папка {user_folder} не существует")
-            return False
-
-        success = True
-        try:
-            for filename in os.listdir(user_folder):
-                file_path = os.path.join(user_folder, filename)
-                try:
-                    os.remove(file_path)
-                    logging.info(f"Удалён файл {file_path}")
-                except Exception as e:
-                    logging.error(f"Не удалось удалить {file_path}: {e}")
-                    success = False
-            try:
-                os.rmdir(user_folder)
-                logging.info(f"Удалена папка {user_folder}")
-            except Exception as e:
-                logging.warning(f"Не удалось удалить папку {user_folder}: {e}")
-        except Exception as e:
-            logging.error(f"Ошибка при сбросе данных: {e}")
-            return False
-
-        return success
+    # === ДЛЯ AI СОВЕТА (загрузка всех данных) ===
+    def _load_json(self, user_id, filename):
+        """Совместимость со старым кодом AI"""
+        # Этот метод нужен только для AIAdvisor, который ожидает JSON
+        # Возвращаем данные из SQLite в том же формате
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        if filename == "sleep.json":
+            cursor.execute("SELECT date, bed_time, wake_time, quality, woke_night, note FROM sleep WHERE user_id = ?", (user_id,))
+            rows = cursor.fetchall()
+            conn.close()
+            return [{"date": r[0], "bed_time": r[1], "wake_time": r[2], "quality": r[3], "woke_night": bool(r[4]), "note": r[5]} for r in rows]
+        
+        elif filename == "checkins.json":
+            cursor.execute("SELECT date, time, energy, stress, emotions, note FROM checkins WHERE user_id = ?", (user_id,))
+            rows = cursor.fetchall()
+            conn.close()
+            return [{"date": r[0], "time": r[1], "energy": r[2], "stress": r[3], "emotions": json.loads(r[4]) if r[4] else [], "note": r[5]} for r in rows]
+        
+        elif filename == "day_summary.json":
+            cursor.execute("SELECT date, score, best, worst, gratitude, note FROM day_summary WHERE user_id = ?", (user_id,))
+            rows = cursor.fetchall()
+            conn.close()
+            return [{"date": r[0], "score": r[1], "best": r[2], "worst": r[3], "gratitude": r[4], "note": r[5]} for r in rows]
+        
+        elif filename == "notes.json":
+            cursor.execute("SELECT id, text, date, time, timestamp FROM notes WHERE user_id = ?", (user_id,))
+            rows = cursor.fetchall()
+            conn.close()
+            return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3], "timestamp": r[4]} for r in rows]
+        
+        elif filename == "reminders.json":
+            cursor.execute("SELECT id, text, date, time, advance_type, parent_id, is_custom, is_active, created_at FROM reminders WHERE user_id = ?", (user_id,))
+            rows = cursor.fetchall()
+            conn.close()
+            return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3], "advance_type": r[4],
+                     "parent_id": r[5], "is_custom": bool(r[6]), "is_active": bool(r[7]), "created_at": r[8]} for r in rows]
+        
+        elif filename == "food.json":
+            cursor.execute("SELECT date, time, meal_type, food_text FROM food WHERE user_id = ?", (user_id,))
+            rows = cursor.fetchall()
+            conn.close()
+            return [{"date": r[0], "time": r[1], "meal_type": r[2], "food_text": r[3]} for r in rows]
+        
+        elif filename == "drinks.json":
+            cursor.execute("SELECT date, time, drink_type, amount FROM drinks WHERE user_id = ?", (user_id,))
+            rows = cursor.fetchall()
+            conn.close()
+            return [{"date": r[0], "time": r[1], "drink_type": r[2], "amount": r[3]} for r in rows]
+        
+        return []
 
 db = Database()
