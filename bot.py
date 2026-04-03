@@ -1687,8 +1687,10 @@ async def run_http_server():
 
 async def on_startup(dp):
     global scheduler
+    # Удаляем вебхук с принудительным сбросом
     await bot.delete_webhook(drop_pending_updates=True)
-    await asyncio.sleep(1)
+    await asyncio.sleep(3)  # Увеличенная пауза
+    
     asyncio.create_task(run_http_server())
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
