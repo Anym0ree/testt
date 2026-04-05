@@ -1756,28 +1756,7 @@ async def on_shutdown_webhook(dp):
     await bot.delete_webhook()
     if scheduler and scheduler.running:
         scheduler.shutdown()
-
 if __name__ == "__main__":
-    from aiohttp import web
-    import asyncio
-
-    async def healthcheck(request):
-        return web.Response(text="OK")
-
-    async def start_healthcheck():
-        app = web.Application()
-        app.router.add_get("/", healthcheck)
-        app.router.add_get("/health", healthcheck)
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, "0.0.0.0", int(os.environ.get("PORT", 10000)))
-        await site.start()
-        print("🌐 Healthcheck сервер запущен на том же порту")
-
-    # Запускаем healthcheck в том же event loop, но не блокируем
-    loop = asyncio.get_event_loop()
-    loop.create_task(start_healthcheck())
-
     executor.start_webhook(
         dispatcher=dp,
         webhook_path=WEBHOOK_PATH,
