@@ -280,3 +280,113 @@ def get_converter_formats_keyboard():
         [KeyboardButton(text="⬅️ Назад")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+# ========== НОВЫЕ КЛАВИАТУРЫ ДЛЯ ЗАМЕТОК И НАПОМИНАНИЙ ==========
+
+def get_notes_list_keyboard(notes, page=0, per_page=5):
+    """Клавиатура для списка заметок с пагинацией"""
+    from math import ceil
+    
+    total_pages = ceil(len(notes) / per_page) if notes else 1
+    start = page * per_page
+    end = start + per_page
+    page_notes = notes[start:end]
+    
+    buttons = []
+    for i, note in enumerate(page_notes, start=start + 1):
+        note_text = note['text'][:35] + "..." if len(note['text']) > 35 else note['text']
+        buttons.append([InlineKeyboardButton(
+            text=f"📝 {i}. {note_text}",
+            callback_data=f"note_view_{note['id']}"
+        )])
+    
+    # Кнопки пагинации
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("◀️ Назад", callback_data=f"notes_page_{page-1}"))
+    if page + 1 < total_pages:
+        nav_buttons.append(InlineKeyboardButton("Вперед ▶️", callback_data=f"notes_page_{page+1}"))
+    if nav_buttons:
+        buttons.append(nav_buttons)
+    
+    buttons.append([InlineKeyboardButton("➕ Новая заметка", callback_data="note_new")])
+    buttons.append([InlineKeyboardButton("⬅️ Главное меню", callback_data="back_to_main")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_note_action_keyboard(note_id):
+    """Клавиатура для действий с заметкой"""
+    buttons = [
+        [
+            InlineKeyboardButton("📋 Копировать", callback_data=f"note_copy_{note_id}"),
+            InlineKeyboardButton("✏️ Редактировать", callback_data=f"note_edit_{note_id}")
+        ],
+        [
+            InlineKeyboardButton("🗑 Удалить", callback_data=f"note_delete_{note_id}"),
+            InlineKeyboardButton("⬅️ Назад к списку", callback_data="notes_back")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_confirm_delete_keyboard(item_type, item_id):
+    """Клавиатура подтверждения удаления"""
+    buttons = [
+        [
+            InlineKeyboardButton("✅ Да, удалить", callback_data=f"{item_type}_confirm_del_{item_id}"),
+            InlineKeyboardButton("❌ Отмена", callback_data=f"{item_type}_cancel")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_reminders_list_keyboard(reminders, page=0, per_page=5):
+    """Клавиатура для списка напоминаний с пагинацией"""
+    from math import ceil
+    
+    total_pages = ceil(len(reminders) / per_page) if reminders else 1
+    start = page * per_page
+    end = start + per_page
+    page_reminders = reminders[start:end]
+    
+    buttons = []
+    for i, r in enumerate(page_reminders, start=start + 1):
+        marker = "🔔" if r.get('parent_id') else "⏰"
+        text = f"{marker} {r['date']} {r['time']} — {r['text'][:30]}"
+        buttons.append([InlineKeyboardButton(
+            text=text,
+            callback_data=f"reminder_view_{r['id']}"
+        )])
+    
+    # Кнопки пагинации
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("◀️ Назад", callback_data=f"reminders_page_{page-1}"))
+    if page + 1 < total_pages:
+        nav_buttons.append(InlineKeyboardButton("Вперед ▶️", callback_data=f"reminders_page_{page+1}"))
+    if nav_buttons:
+        buttons.append(nav_buttons)
+    
+    buttons.append([InlineKeyboardButton("➕ Новое напоминание", callback_data="reminder_new")])
+    buttons.append([InlineKeyboardButton("⬅️ Главное меню", callback_data="back_to_main")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_reminder_action_keyboard(reminder_id):
+    """Клавиатура для действий с напоминанием"""
+    buttons = [
+        [
+            InlineKeyboardButton("✏️ Редактировать", callback_data=f"reminder_edit_{reminder_id}"),
+            InlineKeyboardButton("🗑 Удалить", callback_data=f"reminder_delete_{reminder_id}")
+        ],
+        [InlineKeyboardButton("⬅️ К списку", callback_data="reminders_back")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_main_menu_inline():
+    """Инлайн-главное меню (опционально)"""
+    buttons = [
+        [InlineKeyboardButton("🛌 Сон", callback_data="menu_sleep")],
+        [InlineKeyboardButton("⚡️ Чек-ин", callback_data="menu_checkin")],
+        [InlineKeyboardButton("📝 Итог дня", callback_data="menu_summary")],
+        [InlineKeyboardButton("📝 Заметки и напоминания", callback_data="menu_notes_reminders")],
+        [InlineKeyboardButton("⚙️ Настройки", callback_data="menu_settings")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
