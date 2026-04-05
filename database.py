@@ -22,7 +22,6 @@ class Database:
         conn = self._get_connection()
         cursor = conn.cursor()
         
-        # Таблица пользователей
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -31,7 +30,6 @@ class Database:
             )
         ''')
         
-        # Таблица сна
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS sleep (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,7 +44,6 @@ class Database:
             )
         ''')
         
-        # Таблица чек-инов
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS checkins (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,7 +59,6 @@ class Database:
             )
         ''')
         
-        # Таблица итогов дня
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS day_summary (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +73,6 @@ class Database:
             )
         ''')
         
-        # Таблица еды
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS food (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,7 +85,6 @@ class Database:
             )
         ''')
         
-        # Таблица напитков
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS drinks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,7 +97,6 @@ class Database:
             )
         ''')
         
-        # Таблица заметок
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS notes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,7 +108,6 @@ class Database:
             )
         ''')
         
-        # Таблица напоминаний
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS reminders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -284,10 +276,10 @@ class Database:
     def get_notes(self, user_id):
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, text, date, time, timestamp FROM notes WHERE user_id = ? ORDER BY id DESC", (user_id,))
+        cursor.execute("SELECT id, text, date, time FROM notes WHERE user_id = ? ORDER BY id DESC", (user_id,))
         rows = cursor.fetchall()
         conn.close()
-        return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3], "timestamp": r[4]} for r in rows]
+        return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3]} for r in rows]
 
     def delete_note_by_id(self, user_id, note_id):
         conn = self._get_connection()
@@ -297,6 +289,29 @@ class Database:
         conn.commit()
         conn.close()
         return affected > 0
+
+    def edit_note(self, user_id, note_id, new_text):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        local_dt = self.get_user_local_datetime(user_id)
+        cursor.execute('''
+            UPDATE notes SET text = ?, date = ?, time = ?, timestamp = ?
+            WHERE user_id = ? AND id = ?
+        ''', (new_text, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"),
+              datetime.utcnow().isoformat(), user_id, note_id))
+        conn.commit()
+        conn.close()
+        return True
+
+    def get_note_by_id(self, user_id, note_id):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, text, date, time FROM notes WHERE user_id = ? AND id = ?", (user_id, note_id))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return {"id": row[0], "text": row[1], "date": row[2], "time": row[3]}
+        return None
 
     # === НАПОМИНАНИЯ ===
     def add_reminder(self, user_id, text, target_date, target_time, advance_type=None, parent_id=None, is_custom=False):
@@ -338,11 +353,23 @@ class Database:
         conn.close()
         return True
 
+    def get_reminder_by_id(self, user_id, reminder_id):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, text, date, time FROM reminders 
+            WHERE user_id = ? AND id = ? AND is_active = 1
+        ''', (user_id, reminder_id))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return {"id": row[0], "text": row[1], "date": row[2], "time": row[3]}
+        return None
+
     def get_reminders_due_now(self):
         conn = self._get_connection()
         cursor = conn.cursor()
         due = []
-        # Получаем всех пользователей с активными напоминаниями
         cursor.execute("SELECT DISTINCT user_id FROM reminders WHERE is_active = 1")
         users = cursor.fetchall()
         for (user_id,) in users:
@@ -366,7 +393,7 @@ class Database:
         conn.commit()
         conn.close()
 
-    # === ОБЪЕДИНЁННЫЙ СПИСОК ЕДЫ И НАПИТКОВ ===
+    # === ЕДА + НАПИТКИ ЗА СЕГОДНЯ ===
     def get_today_food_and_drinks(self, user_id):
         today = self.get_user_local_date(user_id)
         conn = self._get_connection()
@@ -411,18 +438,10 @@ class Database:
         cursor.execute("SELECT COUNT(*) FROM reminders WHERE user_id = ? AND is_active = 1", (user_id,))
         reminders_count = cursor.fetchone()[0]
         
-        # Последний сон
-        cursor.execute('''
-            SELECT bed_time, wake_time, quality FROM sleep
-            WHERE user_id = ? ORDER BY id DESC LIMIT 1
-        ''', (user_id,))
+        cursor.execute('''SELECT bed_time, wake_time, quality FROM sleep WHERE user_id = ? ORDER BY id DESC LIMIT 1''', (user_id,))
         last_sleep = cursor.fetchone()
         
-        # Последний чек-ин
-        cursor.execute('''
-            SELECT energy, stress, emotions FROM checkins
-            WHERE user_id = ? ORDER BY id DESC LIMIT 1
-        ''', (user_id,))
+        cursor.execute('''SELECT energy, stress, emotions FROM checkins WHERE user_id = ? ORDER BY id DESC LIMIT 1''', (user_id,))
         last_checkin = cursor.fetchone()
         
         conn.close()
@@ -485,9 +504,9 @@ class Database:
         for row in cursor.fetchall():
             export_data["drinks"].append({"date": row[0], "time": row[1], "drink_type": row[2], "amount": row[3]})
         
-        cursor.execute("SELECT text, date, time, timestamp FROM notes WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT text, date, time FROM notes WHERE user_id = ?", (user_id,))
         for row in cursor.fetchall():
-            export_data["notes"].append({"text": row[0], "date": row[1], "time": row[2], "timestamp": row[3]})
+            export_data["notes"].append({"text": row[0], "date": row[1], "time": row[2]})
         
         cursor.execute("SELECT text, date, time, advance_type, parent_id, is_custom FROM reminders WHERE user_id = ? AND is_active = 1", (user_id,))
         for row in cursor.fetchall():
@@ -503,11 +522,8 @@ class Database:
         
         return file_path
 
-    # === ДЛЯ AI СОВЕТА (загрузка всех данных) ===
+    # === ДЛЯ AI СОВЕТА ===
     def _load_json(self, user_id, filename):
-        """Совместимость со старым кодом AI"""
-        # Этот метод нужен только для AIAdvisor, который ожидает JSON
-        # Возвращаем данные из SQLite в том же формате
         conn = self._get_connection()
         cursor = conn.cursor()
         
@@ -530,17 +546,17 @@ class Database:
             return [{"date": r[0], "score": r[1], "best": r[2], "worst": r[3], "gratitude": r[4], "note": r[5]} for r in rows]
         
         elif filename == "notes.json":
-            cursor.execute("SELECT id, text, date, time, timestamp FROM notes WHERE user_id = ?", (user_id,))
+            cursor.execute("SELECT id, text, date, time FROM notes WHERE user_id = ?", (user_id,))
             rows = cursor.fetchall()
             conn.close()
-            return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3], "timestamp": r[4]} for r in rows]
+            return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3]} for r in rows]
         
         elif filename == "reminders.json":
-            cursor.execute("SELECT id, text, date, time, advance_type, parent_id, is_custom, is_active, created_at FROM reminders WHERE user_id = ?", (user_id,))
+            cursor.execute("SELECT id, text, date, time, advance_type, parent_id, is_custom, is_active FROM reminders WHERE user_id = ?", (user_id,))
             rows = cursor.fetchall()
             conn.close()
             return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3], "advance_type": r[4],
-                     "parent_id": r[5], "is_custom": bool(r[6]), "is_active": bool(r[7]), "created_at": r[8]} for r in rows]
+                     "parent_id": r[5], "is_custom": bool(r[6]), "is_active": bool(r[7])} for r in rows]
         
         elif filename == "food.json":
             cursor.execute("SELECT date, time, meal_type, food_text FROM food WHERE user_id = ?", (user_id,))
@@ -554,116 +570,7 @@ class Database:
             conn.close()
             return [{"date": r[0], "time": r[1], "drink_type": r[2], "amount": r[3]} for r in rows]
         
+        conn.close()
         return []
-    # === ДЛЯ НОВЫХ КНОПОК ===
-    def get_note_by_id(self, user_id, note_id):
-        """Получить заметку по ID"""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, text, date, time FROM notes WHERE user_id = ? AND id = ?", (user_id, note_id))
-        row = cursor.fetchone()
-        conn.close()
-        if row:
-            return {"id": row[0], "text": row[1], "date": row[2], "time": row[3]}
-        return None
-    
-    def get_reminder_by_id(self, user_id, reminder_id):
-        """Получить напоминание по ID"""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT id, text, date, time FROM reminders 
-            WHERE user_id = ? AND id = ? AND is_active = 1
-        ''', (user_id, reminder_id))
-        row = cursor.fetchone()
-        conn.close()
-        if row:
-            return {"id": row[0], "text": row[1], "date": row[2], "time": row[3]}
-        return None
-    
-    def edit_note(self, user_id, note_id, new_text):
-        """Редактировать заметку"""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        local_dt = self.get_user_local_datetime(user_id)
-        cursor.execute('''
-            UPDATE notes 
-            SET text = ?, date = ?, time = ?, timestamp = ?
-            WHERE user_id = ? AND id = ?
-        ''', (new_text, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"),
-              datetime.utcnow().isoformat(), user_id, note_id))
-        conn.commit()
-        conn.close()
-        return True
-    # === ДЛЯ ЗАМЕТОК (ДОПОЛНИТЕЛЬНЫЕ МЕТОДЫ) ===
-    def get_notes(self, user_id):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, text, date, time FROM notes WHERE user_id = ? ORDER BY id DESC", (user_id,))
-        rows = cursor.fetchall()
-        conn.close()
-        return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3]} for r in rows]
 
-    def delete_note_by_id(self, user_id, note_id):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM notes WHERE user_id = ? AND id = ?", (user_id, note_id))
-        affected = cursor.rowcount
-        conn.commit()
-        conn.close()
-        return affected > 0
-
-    def add_note(self, user_id, text):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        local_dt = self.get_user_local_datetime(user_id)
-        cursor.execute('''
-            INSERT INTO notes (user_id, text, date, time, timestamp)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (user_id, text, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"),
-              datetime.utcnow().isoformat()))
-        conn.commit()
-        note_id = cursor.lastrowid
-        conn.close()
-        return note_id
-
-    # === ДЛЯ НАПОМИНАНИЙ (ДОПОЛНИТЕЛЬНЫЕ МЕТОДЫ) ===
-    def get_active_reminders(self, user_id):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT id, text, date, time, advance_type, parent_id, is_custom
-            FROM reminders WHERE user_id = ? AND is_active = 1
-            ORDER BY date, time
-        ''', (user_id,))
-        rows = cursor.fetchall()
-        conn.close()
-        return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3],
-                 "advance_type": r[4], "parent_id": r[5], "is_custom": r[6]} for r in rows]
-
-    def delete_reminder(self, user_id, reminder_id):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("UPDATE reminders SET is_active = 0 WHERE user_id = ? AND (id = ? OR parent_id = ?)",
-                      (user_id, reminder_id, reminder_id))
-        conn.commit()
-        conn.close()
-        return True
-
-    def add_reminder(self, user_id, text, target_date, target_time, advance_type=None, parent_id=None, is_custom=False):
-        local_dt = self.get_user_local_datetime(user_id)
-        target_dt = datetime.strptime(f"{target_date} {target_time}", "%Y-%m-%d %H:%M")
-        if target_dt < local_dt:
-            return None
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO reminders (user_id, text, date, time, advance_type, parent_id, is_custom, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (user_id, text, target_date, target_time, advance_type, parent_id, 1 if is_custom else 0,
-              datetime.utcnow().isoformat()))
-        conn.commit()
-        reminder_id = cursor.lastrowid
-        conn.close()
-        return reminder_id
 db = Database()
