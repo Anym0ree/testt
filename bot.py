@@ -1500,7 +1500,7 @@ async def sleep_menu_action(message: types.Message, state: FSMContext):
         await state.finish()
         await reminder_settings_menu(message)
     elif message.text == "🕐 Изменить время":
-        await message.answer("Введи новое время в формате ЧЧ:ММ (например, 09:00):")
+        await message.answer("Введи новое время в формате ЧЧ:ММ (например, 09:00):\n\nИли нажми «Назад» для отмены.")
         await state.set_state(ReminderCustomizeStates.change_sleep_time)
     elif message.text == "⬅️ Назад":
         await state.finish()
@@ -1510,9 +1510,15 @@ async def sleep_menu_action(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=ReminderCustomizeStates.change_sleep_time)
 async def change_sleep_time(message: types.Message, state: FSMContext):
-    if not is_valid_time_text(message.text):
-        await message.answer("❌ Неверный формат. Введи время в формате ЧЧ:ММ (например, 09:00).")
+    if message.text == "⬅️ Назад":
+        await state.finish()
+        await reminder_settings_menu(message)
         return
+    
+    if not is_valid_time_text(message.text):
+        await message.answer("❌ Неверный формат. Введи время в формате ЧЧ:ММ (например, 09:00).\nИли нажми «Назад».")
+        return
+    
     settings_data = load_reminder_settings(message.from_user.id)
     if not settings_data:
         settings_data = get_default_reminders()
@@ -1541,7 +1547,7 @@ async def checkins_menu_action(message: types.Message, state: FSMContext):
         await state.finish()
         await reminder_settings_menu(message)
     elif message.text == "🕐 Изменить время":
-        await message.answer("Введи время для чек-инов в формате ЧЧ:ММ через запятую или пробел.\nНапример: 12:00, 16:00, 20:00")
+        await message.answer("Введи время для чек-инов в формате ЧЧ:ММ через запятую или пробел.\nНапример: 12:00, 16:00, 20:00\n\nИли нажми «Назад».")
         await state.set_state(ReminderCustomizeStates.change_checkins_times)
     elif message.text == "⬅️ Назад":
         await state.finish()
@@ -1551,14 +1557,21 @@ async def checkins_menu_action(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=ReminderCustomizeStates.change_checkins_times)
 async def change_checkins_times(message: types.Message, state: FSMContext):
+    if message.text == "⬅️ Назад":
+        await state.finish()
+        await reminder_settings_menu(message)
+        return
+    
     parts = re.split(r'[ ,;]+', message.text)
     times = []
     for part in parts:
         if is_valid_time_text(part.strip()):
             times.append(part.strip())
+    
     if not times:
-        await message.answer("❌ Не удалось распознать время. Введи время в формате ЧЧ:ММ через запятую или пробел (например, 12:00, 16:00, 20:00).")
+        await message.answer("❌ Не удалось распознать время. Введи время в формате ЧЧ:ММ через запятую или пробел (например, 12:00, 16:00, 20:00).\nИли нажми «Назад».")
         return
+    
     times = sorted(set(times))
     settings_data = load_reminder_settings(message.from_user.id)
     if not settings_data:
@@ -1588,7 +1601,7 @@ async def summary_menu_action(message: types.Message, state: FSMContext):
         await state.finish()
         await reminder_settings_menu(message)
     elif message.text == "🕐 Изменить время":
-        await message.answer("Введи новое время для итога дня в формате ЧЧ:ММ (например, 22:30):")
+        await message.answer("Введи новое время для итога дня в формате ЧЧ:ММ (например, 22:30):\n\nИли нажми «Назад».")
         await state.set_state(ReminderCustomizeStates.change_summary_time)
     elif message.text == "⬅️ Назад":
         await state.finish()
@@ -1598,9 +1611,15 @@ async def summary_menu_action(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=ReminderCustomizeStates.change_summary_time)
 async def change_summary_time(message: types.Message, state: FSMContext):
-    if not is_valid_time_text(message.text):
-        await message.answer("❌ Неверный формат. Введи время в формате ЧЧ:ММ (например, 22:30).")
+    if message.text == "⬅️ Назад":
+        await state.finish()
+        await reminder_settings_menu(message)
         return
+    
+    if not is_valid_time_text(message.text):
+        await message.answer("❌ Неверный формат. Введи время в формате ЧЧ:ММ (например, 22:30).\nИли нажми «Назад».")
+        return
+    
     settings_data = load_reminder_settings(message.from_user.id)
     if not settings_data:
         settings_data = get_default_reminders()
@@ -1612,6 +1631,62 @@ async def change_summary_time(message: types.Message, state: FSMContext):
 
 @dp.message_handler(text="⬅️ Назад")
 async def back_from_settings(message: types.Message):
+    await message.answer("Главное меню", reply_markup=get_main_menu())
+
+# ========== УНИВЕРСАЛЬНЫЙ ОБРАБОТЧИК НАЗАД ==========
+@dp.message_handler(text="⬅️ Назад", state='*')
+async def universal_back_handler(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    
+    # Список всех состояний, где нужно просто выйти в главное меню
+    if current_state in [
+        "ReminderCustomizeStates:change_sleep_time",
+        "ReminderCustomizeStates:change_checkins_times", 
+        "ReminderCustomizeStates:change_summary_time",
+        "ReminderCustomizeStates:sleep_menu",
+        "ReminderCustomizeStates:checkins_menu",
+        "ReminderCustomizeStates:summary_menu",
+        "ReminderCustomizeStates:waiting",
+        "AIState:waiting_question",
+        "NoteStates:text",
+        "ReminderStates:text",
+        "ReminderStates:date",
+        "ReminderStates:hour",
+        "ReminderStates:minute",
+        "ReminderStates:advance",
+        "ReminderStates:custom_time",
+        "SleepStates:bed_time",
+        "SleepStates:wake_time",
+        "SleepStates:quality",
+        "SleepStates:woke_night",
+        "SleepStates:note",
+        "CheckinStates:energy",
+        "CheckinStates:stress",
+        "CheckinStates:emotions",
+        "CheckinStates:note",
+        "DaySummaryStates:score",
+        "DaySummaryStates:best",
+        "DaySummaryStates:worst",
+        "DaySummaryStates:gratitude",
+        "DaySummaryStates:note",
+        "FoodStates:meal_type",
+        "FoodStates:food_text",
+        "DrinkStates:drink_type",
+        "DrinkStates:amount",
+        "FoodDrinkStates:type",
+        "TimezoneStates:city",
+        "TimezoneStates:offset",
+        "ExportStates:url",
+        "ExportStates:format",
+        "ConverterStates:file",
+        "ConverterStates:format",
+    ]:
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
+        return
+    
+    # Если состояние не найдено - просто выходим в главное меню
+    await state.finish()
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
 # ========== УВЕДОМЛЕНИЯ ==========
