@@ -2,6 +2,7 @@ import os
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 DATA_FOLDER = "data"
 
 # Проверка, что токены заданы (для отладки)
