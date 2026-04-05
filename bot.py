@@ -1726,7 +1726,7 @@ async def check_custom_reminders():
         logging.error(f"Ошибка кастомных напоминаний: {e}")
 
 async def check_reminders():
-    due_reminders = await db.get_reminders_due_now()
+    due_reminders = await db.get_reminders_due_now()  # <-- ДОБАВЛЕН AWAIT
     for user_id, reminder in due_reminders:
         try:
             text = reminder["text"]
