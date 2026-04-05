@@ -65,6 +65,17 @@ class ConverterStates(StatesGroup):
 
 class AIState(StatesGroup):
     waiting_question = State()
+
 class ReminderSetupStates(StatesGroup):
     ask = State()
     choose_mode = State()
+
+# ========== ДОБАВЛЕННЫЙ КЛАСС ДЛЯ НАСТРОЕК НАПОМИНАНИЙ ==========
+class ReminderCustomizeStates(StatesGroup):
+    waiting = State()
+    sleep_menu = State()
+    checkins_menu = State()
+    summary_menu = State()
+    change_sleep_time = State()
+    change_checkins_times = State()
+    change_summary_time = State()
