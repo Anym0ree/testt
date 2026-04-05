@@ -381,3 +381,29 @@ def get_main_menu_inline():
         [InlineKeyboardButton("⚙️ Настройки", callback_data="menu_settings")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+# ========== ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ КНОПОК ==========
+
+def get_note_action_keyboard_v2(note_id):
+    """Клавиатура для действий с заметкой (рабочая версия)"""
+    buttons = [
+        [
+            InlineKeyboardButton("📋 Копировать", callback_data=f"note_copy_{note_id}"),
+            InlineKeyboardButton("✏️ Редактировать", callback_data=f"note_edit_{note_id}")
+        ],
+        [
+            InlineKeyboardButton("🗑 Удалить", callback_data=f"note_delete_{note_id}"),
+            InlineKeyboardButton("⬅️ Назад", callback_data="notes_back")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_reminder_action_keyboard_v2(reminder_id):
+    """Клавиатура для действий с напоминанием (рабочая версия)"""
+    buttons = [
+        [
+            InlineKeyboardButton("✏️ Редактировать", callback_data=f"reminder_edit_{reminder_id}"),
+            InlineKeyboardButton("🗑 Удалить", callback_data=f"reminder_delete_{reminder_id}")
+        ],
+        [InlineKeyboardButton("⬅️ Назад", callback_data="reminders_back")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
