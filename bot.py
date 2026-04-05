@@ -1638,7 +1638,6 @@ async def back_from_settings(message: types.Message):
 async def universal_back_handler(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     
-    # Список всех состояний, где нужно просто выйти в главное меню
     if current_state in [
         "ReminderCustomizeStates:change_sleep_time",
         "ReminderCustomizeStates:change_checkins_times", 
@@ -1685,7 +1684,6 @@ async def universal_back_handler(message: types.Message, state: FSMContext):
         await message.answer("Главное меню", reply_markup=get_main_menu())
         return
     
-    # Если состояние не найдено - просто выходим в главное меню
     await state.finish()
     await message.answer("Главное меню", reply_markup=get_main_menu())
 
@@ -1726,7 +1724,7 @@ async def check_custom_reminders():
         logging.error(f"Ошибка кастомных напоминаний: {e}")
 
 async def check_reminders():
-    due_reminders = await db.get_reminders_due_now()  # <-- ДОБАВЛЕН AWAIT
+    due_reminders = await db.get_reminders_due_now()
     for user_id, reminder in due_reminders:
         try:
             text = reminder["text"]
@@ -1736,53 +1734,36 @@ async def check_reminders():
         except Exception as e:
             logging.error(f"Ошибка отправки напоминания {reminder['id']}: {e}")
 
-# ========== ПРОСТОЙ HTTP-СЕРВЕР ДЛЯ HEALTHCHECK ==========
-async def healthcheck(request):
-    return web.Response(text="OK")
+# ========== WEBHOOK MODE (для Render) ==========
+WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
+WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')}{WEBHOOK_PATH}"
 
-async def run_http_server():
-    port = int(os.environ.get("PORT", 10000))
-    app = web.Application()
-    app.router.add_get("/", healthcheck)
-    app.router.add_get("/health", healthcheck)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    print(f"🌐 Healthcheck сервер запущен на порту {port}")
-    await asyncio.Event().wait()
-
-async def on_startup(dp):
-    global scheduler
-    await bot.delete_webhook(drop_pending_updates=True)
-    
-    # Ждём 5 секунд, чтобы старый процесс точно завершился
-    await asyncio.sleep(5)
-    
-    # Инициализация базы данных
+async def on_startup_webhook(dp):
+    await bot.delete_webhook()
     await db.init_pool()
+    await bot.set_webhook(WEBHOOK_URL)
     
-    asyncio.create_task(run_http_server())
+    global scheduler
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
     scheduler.add_job(check_custom_reminders, IntervalTrigger(minutes=1))
     scheduler.start()
-    print("🤖 Бот запущен и планировщик уведомлений активен!")
     
-    # ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ (ВАЖНО!)
-    await db.init_pool()
-    
-    asyncio.create_task(run_http_server())
-    scheduler = AsyncIOScheduler(timezone="UTC")
-    scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
-    scheduler.add_job(check_custom_reminders, IntervalTrigger(minutes=1))
-    scheduler.start()
+    print(f"✅ Webhook установлен: {WEBHOOK_URL}")
     print("🤖 Бот запущен и планировщик уведомлений активен!")
 
-async def on_shutdown(dp):
-    global scheduler
+async def on_shutdown_webhook(dp):
+    await bot.delete_webhook()
     if scheduler and scheduler.running:
-        scheduler.shutdown(wait=False)
+        scheduler.shutdown()
 
 if __name__ == "__main__":
-    executor.start_polling(dp, on_startup=on_startup, on_shutdown=on_shutdown, skip_updates=True)
+    executor.start_webhook(
+        dispatcher=dp,
+        webhook_path=WEBHOOK_PATH,
+        on_startup=on_startup_webhook,
+        on_shutdown=on_shutdown_webhook,
+        skip_updates=True,
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 10000))
+    )
