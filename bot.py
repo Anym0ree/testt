@@ -1756,6 +1756,44 @@ async def on_shutdown_webhook(dp):
     await bot.delete_webhook()
     if scheduler and scheduler.running:
         scheduler.shutdown()
+# ========== POLLING MODE (устойчивый к перезапускам) ==========
+async def on_startup_polling(dp):
+    # Ждём 5 секунд, чтобы старый процесс точно завершился
+    await asyncio.sleep(5)
+    
+    # Инициализация БД
+    await db.init_pool()
+    
+    # Запуск планировщика
+    global scheduler
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
+    scheduler.add_job(check_custom_reminders, IntervalTrigger(minutes=1))
+    scheduler.start()
+    
+    # Запускаем простой HTTP-сервер для healthcheck (чтобы Render не убивал бота)
+    asyncio.create_task(run_healthcheck_server())
+    
+    print("🤖 Бот запущен в режиме polling, планировщик активен!")
+
+async def on_shutdown_polling(dp):
+    if scheduler and scheduler.running:
+        scheduler.shutdown()
+
+async def run_healthcheck_server():
+    """Простой HTTP-сервер для Render healthcheck"""
+    port = int(os.environ.get("PORT", 10000))
+    app = web.Application()
+    app.router.add_get("/", lambda req: web.Response(text="OK"))
+    app.router.add_get("/health", lambda req: web.Response(text="OK"))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    print(f"🌐 Healthcheck сервер запущен на порту {port}")
+    # Бесконечно ждём
+    await asyncio.Event().wait()
+
 if __name__ == "__main__":
     from aiogram import executor
     executor.start_polling(
