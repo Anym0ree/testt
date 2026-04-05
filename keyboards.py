@@ -71,15 +71,6 @@ def get_note_action_keyboard(note_id):
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def get_confirm_delete_keyboard(item_type, item_id):
-    buttons = [
-        [
-            InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"{item_type}_confirm_del_{item_id}"),
-            InlineKeyboardButton(text="❌ Отмена", callback_data=f"{item_type}_cancel")
-        ]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
 def get_reminder_list_keyboard(reminders):
     buttons = []
     for r in reminders:
