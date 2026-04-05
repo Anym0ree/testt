@@ -595,4 +595,75 @@ class Database:
         conn.commit()
         conn.close()
         return True
+    # === ДЛЯ ЗАМЕТОК (ДОПОЛНИТЕЛЬНЫЕ МЕТОДЫ) ===
+    def get_notes(self, user_id):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, text, date, time FROM notes WHERE user_id = ? ORDER BY id DESC", (user_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3]} for r in rows]
+
+    def delete_note_by_id(self, user_id, note_id):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM notes WHERE user_id = ? AND id = ?", (user_id, note_id))
+        affected = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return affected > 0
+
+    def add_note(self, user_id, text):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        local_dt = self.get_user_local_datetime(user_id)
+        cursor.execute('''
+            INSERT INTO notes (user_id, text, date, time, timestamp)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (user_id, text, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"),
+              datetime.utcnow().isoformat()))
+        conn.commit()
+        note_id = cursor.lastrowid
+        conn.close()
+        return note_id
+
+    # === ДЛЯ НАПОМИНАНИЙ (ДОПОЛНИТЕЛЬНЫЕ МЕТОДЫ) ===
+    def get_active_reminders(self, user_id):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, text, date, time, advance_type, parent_id, is_custom
+            FROM reminders WHERE user_id = ? AND is_active = 1
+            ORDER BY date, time
+        ''', (user_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3],
+                 "advance_type": r[4], "parent_id": r[5], "is_custom": r[6]} for r in rows]
+
+    def delete_reminder(self, user_id, reminder_id):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE reminders SET is_active = 0 WHERE user_id = ? AND (id = ? OR parent_id = ?)",
+                      (user_id, reminder_id, reminder_id))
+        conn.commit()
+        conn.close()
+        return True
+
+    def add_reminder(self, user_id, text, target_date, target_time, advance_type=None, parent_id=None, is_custom=False):
+        local_dt = self.get_user_local_datetime(user_id)
+        target_dt = datetime.strptime(f"{target_date} {target_time}", "%Y-%m-%d %H:%M")
+        if target_dt < local_dt:
+            return None
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO reminders (user_id, text, date, time, advance_type, parent_id, is_custom, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, text, target_date, target_time, advance_type, parent_id, 1 if is_custom else 0,
+              datetime.utcnow().isoformat()))
+        conn.commit()
+        reminder_id = cursor.lastrowid
+        conn.close()
+        return reminder_id
 db = Database()
