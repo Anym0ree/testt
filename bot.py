@@ -1429,12 +1429,7 @@ async def reminder_settings_menu(message: types.Message):
     await message.answer("Выбери, что настроить:", reply_markup=kb)
     await ReminderCustomizeStates.waiting.set()
 
-class ReminderCustomizeStates:
-    waiting = 0
-    change_sleep_time = 1
-    change_checkins_times = 2
-    change_summary_time = 3
-
+# ========== НАСТРОЙКИ НАПОМИНАНИЙ (КАСТОМИЗАЦИЯ) ==========
 @dp.message_handler(state=ReminderCustomizeStates.waiting)
 async def reminder_customize_choose(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
@@ -1442,122 +1437,119 @@ async def reminder_customize_choose(message: types.Message, state: FSMContext):
         await settings(message)
         return
 
-    settings = load_reminder_settings(message.from_user.id)
-    if not settings:
-        settings = get_default_reminders()
+    settings_data = load_reminder_settings(message.from_user.id)
+    if not settings_data:
+        settings_data = get_default_reminders()
 
     if message.text == "🛌 Сон":
         kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        current_enabled = settings["sleep"]["enabled"]
+        current_enabled = settings_data["sleep"]["enabled"]
         kb.add("✅ Включить" if not current_enabled else "❌ Выключить")
         kb.add("🕐 Изменить время")
         kb.add("⬅️ Назад")
         await message.answer(
-            f"Сон:\nСостояние: {'✅ Включено' if current_enabled else '❌ Выключено'}\nВремя: {settings['sleep']['time']}\n\nЧто сделать?",
+            f"Сон:\nСостояние: {'✅ Включено' if current_enabled else '❌ Выключено'}\nВремя: {settings_data['sleep']['time']}\n\nЧто сделать?",
             reply_markup=kb
         )
-        await state.update_data(current_type="sleep")
-        await state.set_state("sleep_menu")
+        await state.set_state(ReminderCustomizeStates.sleep_menu)
 
     elif message.text == "⚡️ Чек-ины":
         kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        current_enabled = settings["checkins"]["enabled"]
+        current_enabled = settings_data["checkins"]["enabled"]
         kb.add("✅ Включить" if not current_enabled else "❌ Выключить")
         kb.add("🕐 Изменить время")
         kb.add("⬅️ Назад")
-        times_str = ", ".join(settings["checkins"]["times"])
+        times_str = ", ".join(settings_data["checkins"]["times"])
         await message.answer(
             f"Чек-ины:\nСостояние: {'✅ Включено' if current_enabled else '❌ Выключено'}\nВремя: {times_str}\n\nЧто сделать?",
             reply_markup=kb
         )
-        await state.update_data(current_type="checkins")
-        await state.set_state("checkins_menu")
+        await state.set_state(ReminderCustomizeStates.checkins_menu)
 
     elif message.text == "📝 Итог дня":
         kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        current_enabled = settings["summary"]["enabled"]
+        current_enabled = settings_data["summary"]["enabled"]
         kb.add("✅ Включить" if not current_enabled else "❌ Выключить")
         kb.add("🕐 Изменить время")
         kb.add("⬅️ Назад")
         await message.answer(
-            f"Итог дня:\nСостояние: {'✅ Включено' if current_enabled else '❌ Выключено'}\nВремя: {settings['summary']['time']}\n\nЧто сделать?",
+            f"Итог дня:\nСостояние: {'✅ Включено' if current_enabled else '❌ Выключено'}\nВремя: {settings_data['summary']['time']}\n\nЧто сделать?",
             reply_markup=kb
         )
-        await state.update_data(current_type="summary")
-        await state.set_state("summary_menu")
+        await state.set_state(ReminderCustomizeStates.summary_menu)
 
     else:
         await message.answer("Выбери из кнопок.")
 
-@dp.message_handler(state="sleep_menu")
+@dp.message_handler(state=ReminderCustomizeStates.sleep_menu)
 async def sleep_menu_action(message: types.Message, state: FSMContext):
-    settings = load_reminder_settings(message.from_user.id)
-    if not settings:
-        settings = get_default_reminders()
+    settings_data = load_reminder_settings(message.from_user.id)
+    if not settings_data:
+        settings_data = get_default_reminders()
 
     if message.text == "✅ Включить":
-        settings["sleep"]["enabled"] = True
-        save_reminder_settings(message.from_user.id, settings)
+        settings_data["sleep"]["enabled"] = True
+        save_reminder_settings(message.from_user.id, settings_data)
         await message.answer("✅ Напоминания о сне включены.")
         await state.finish()
         await reminder_settings_menu(message)
     elif message.text == "❌ Выключить":
-        settings["sleep"]["enabled"] = False
-        save_reminder_settings(message.from_user.id, settings)
+        settings_data["sleep"]["enabled"] = False
+        save_reminder_settings(message.from_user.id, settings_data)
         await message.answer("❌ Напоминания о сне выключены.")
         await state.finish()
         await reminder_settings_menu(message)
     elif message.text == "🕐 Изменить время":
         await message.answer("Введи новое время в формате ЧЧ:ММ (например, 09:00):")
-        await state.set_state("change_sleep_time")
+        await state.set_state(ReminderCustomizeStates.change_sleep_time)
     elif message.text == "⬅️ Назад":
         await state.finish()
         await reminder_settings_menu(message)
     else:
         await message.answer("Выбери действие из кнопок.")
 
-@dp.message_handler(state="change_sleep_time")
+@dp.message_handler(state=ReminderCustomizeStates.change_sleep_time)
 async def change_sleep_time(message: types.Message, state: FSMContext):
     if not is_valid_time_text(message.text):
         await message.answer("❌ Неверный формат. Введи время в формате ЧЧ:ММ (например, 09:00).")
         return
-    settings = load_reminder_settings(message.from_user.id)
-    if not settings:
-        settings = get_default_reminders()
-    settings["sleep"]["time"] = message.text
-    save_reminder_settings(message.from_user.id, settings)
+    settings_data = load_reminder_settings(message.from_user.id)
+    if not settings_data:
+        settings_data = get_default_reminders()
+    settings_data["sleep"]["time"] = message.text
+    save_reminder_settings(message.from_user.id, settings_data)
     await message.answer(f"✅ Время напоминания о сне изменено на {message.text}.")
     await state.finish()
     await reminder_settings_menu(message)
 
-@dp.message_handler(state="checkins_menu")
+@dp.message_handler(state=ReminderCustomizeStates.checkins_menu)
 async def checkins_menu_action(message: types.Message, state: FSMContext):
-    settings = load_reminder_settings(message.from_user.id)
-    if not settings:
-        settings = get_default_reminders()
+    settings_data = load_reminder_settings(message.from_user.id)
+    if not settings_data:
+        settings_data = get_default_reminders()
 
     if message.text == "✅ Включить":
-        settings["checkins"]["enabled"] = True
-        save_reminder_settings(message.from_user.id, settings)
+        settings_data["checkins"]["enabled"] = True
+        save_reminder_settings(message.from_user.id, settings_data)
         await message.answer("✅ Напоминания о чек-инах включены.")
         await state.finish()
         await reminder_settings_menu(message)
     elif message.text == "❌ Выключить":
-        settings["checkins"]["enabled"] = False
-        save_reminder_settings(message.from_user.id, settings)
+        settings_data["checkins"]["enabled"] = False
+        save_reminder_settings(message.from_user.id, settings_data)
         await message.answer("❌ Напоминания о чек-инах выключены.")
         await state.finish()
         await reminder_settings_menu(message)
     elif message.text == "🕐 Изменить время":
         await message.answer("Введи время для чек-инов в формате ЧЧ:ММ через запятую или пробел.\nНапример: 12:00, 16:00, 20:00")
-        await state.set_state("change_checkins_times")
+        await state.set_state(ReminderCustomizeStates.change_checkins_times)
     elif message.text == "⬅️ Назад":
         await state.finish()
         await reminder_settings_menu(message)
     else:
         await message.answer("Выбери действие из кнопок.")
 
-@dp.message_handler(state="change_checkins_times")
+@dp.message_handler(state=ReminderCustomizeStates.change_checkins_times)
 async def change_checkins_times(message: types.Message, state: FSMContext):
     parts = re.split(r'[ ,;]+', message.text)
     times = []
@@ -1568,52 +1560,52 @@ async def change_checkins_times(message: types.Message, state: FSMContext):
         await message.answer("❌ Не удалось распознать время. Введи время в формате ЧЧ:ММ через запятую или пробел (например, 12:00, 16:00, 20:00).")
         return
     times = sorted(set(times))
-    settings = load_reminder_settings(message.from_user.id)
-    if not settings:
-        settings = get_default_reminders()
-    settings["checkins"]["times"] = times
-    save_reminder_settings(message.from_user.id, settings)
+    settings_data = load_reminder_settings(message.from_user.id)
+    if not settings_data:
+        settings_data = get_default_reminders()
+    settings_data["checkins"]["times"] = times
+    save_reminder_settings(message.from_user.id, settings_data)
     await message.answer(f"✅ Время чек-инов изменено: {', '.join(times)}.")
     await state.finish()
     await reminder_settings_menu(message)
 
-@dp.message_handler(state="summary_menu")
+@dp.message_handler(state=ReminderCustomizeStates.summary_menu)
 async def summary_menu_action(message: types.Message, state: FSMContext):
-    settings = load_reminder_settings(message.from_user.id)
-    if not settings:
-        settings = get_default_reminders()
+    settings_data = load_reminder_settings(message.from_user.id)
+    if not settings_data:
+        settings_data = get_default_reminders()
 
     if message.text == "✅ Включить":
-        settings["summary"]["enabled"] = True
-        save_reminder_settings(message.from_user.id, settings)
+        settings_data["summary"]["enabled"] = True
+        save_reminder_settings(message.from_user.id, settings_data)
         await message.answer("✅ Напоминания об итоге дня включены.")
         await state.finish()
         await reminder_settings_menu(message)
     elif message.text == "❌ Выключить":
-        settings["summary"]["enabled"] = False
-        save_reminder_settings(message.from_user.id, settings)
+        settings_data["summary"]["enabled"] = False
+        save_reminder_settings(message.from_user.id, settings_data)
         await message.answer("❌ Напоминания об итоге дня выключены.")
         await state.finish()
         await reminder_settings_menu(message)
     elif message.text == "🕐 Изменить время":
         await message.answer("Введи новое время для итога дня в формате ЧЧ:ММ (например, 22:30):")
-        await state.set_state("change_summary_time")
+        await state.set_state(ReminderCustomizeStates.change_summary_time)
     elif message.text == "⬅️ Назад":
         await state.finish()
         await reminder_settings_menu(message)
     else:
         await message.answer("Выбери действие из кнопок.")
 
-@dp.message_handler(state="change_summary_time")
+@dp.message_handler(state=ReminderCustomizeStates.change_summary_time)
 async def change_summary_time(message: types.Message, state: FSMContext):
     if not is_valid_time_text(message.text):
         await message.answer("❌ Неверный формат. Введи время в формате ЧЧ:ММ (например, 22:30).")
         return
-    settings = load_reminder_settings(message.from_user.id)
-    if not settings:
-        settings = get_default_reminders()
-    settings["summary"]["time"] = message.text
-    save_reminder_settings(message.from_user.id, settings)
+    settings_data = load_reminder_settings(message.from_user.id)
+    if not settings_data:
+        settings_data = get_default_reminders()
+    settings_data["summary"]["time"] = message.text
+    save_reminder_settings(message.from_user.id, settings_data)
     await message.answer(f"✅ Время итога дня изменено на {message.text}.")
     await state.finish()
     await reminder_settings_menu(message)
@@ -1632,27 +1624,27 @@ async def check_custom_reminders():
         with open(REMINDER_FILE, "r") as f:
             all_data = json.load(f)
         now_utc = datetime.utcnow()
-        for user_id, settings in all_data.items():
+        for user_id, settings_data in all_data.items():
             user_id = int(user_id)
             tz = db.get_user_timezone(user_id)
             if tz == 0:
                 continue
             user_time = now_utc + timedelta(hours=tz)
             current_time = user_time.strftime("%H:%M")
-            if settings["sleep"]["enabled"]:
-                if settings["sleep"]["time"] == current_time:
+            if settings_data["sleep"]["enabled"]:
+                if settings_data["sleep"]["time"] == current_time:
                     if not db.has_sleep_today(user_id):
                         await bot.send_message(user_id, "🛌 Пора записать сон")
-            if settings["checkins"]["enabled"]:
-                for t in settings["checkins"]["times"]:
+            if settings_data["checkins"]["enabled"]:
+                for t in settings_data["checkins"]["times"]:
                     if t == current_time:
                         checkins = db._load_json(user_id, "checkins.json")
                         today_str = user_time.strftime("%Y-%m-%d")
                         has_today_checkin = any(c.get("date") == today_str for c in checkins)
                         if not has_today_checkin:
                             await bot.send_message(user_id, "⚡️ Сделай чек-ин")
-            if settings["summary"]["enabled"]:
-                if settings["summary"]["time"] == current_time:
+            if settings_data["summary"]["enabled"]:
+                if settings_data["summary"]["time"] == current_time:
                     if db.get_target_date_for_summary(user_id):
                         await bot.send_message(user_id, "📝 Не забудь подвести итог дня")
     except Exception as e:
@@ -1687,9 +1679,8 @@ async def run_http_server():
 
 async def on_startup(dp):
     global scheduler
-    # Удаляем вебхук с принудительным сбросом
     await bot.delete_webhook(drop_pending_updates=True)
-    await asyncio.sleep(3)  # Увеличенная пауза
+    await asyncio.sleep(3)
     
     asyncio.create_task(run_http_server())
     scheduler = AsyncIOScheduler(timezone="UTC")
