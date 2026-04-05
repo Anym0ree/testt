@@ -1755,7 +1755,19 @@ async def run_http_server():
 async def on_startup(dp):
     global scheduler
     await bot.delete_webhook(drop_pending_updates=True)
-    await asyncio.sleep(3)
+    
+    # Ждём 5 секунд, чтобы старый процесс точно завершился
+    await asyncio.sleep(5)
+    
+    # Инициализация базы данных
+    await db.init_pool()
+    
+    asyncio.create_task(run_http_server())
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
+    scheduler.add_job(check_custom_reminders, IntervalTrigger(minutes=1))
+    scheduler.start()
+    print("🤖 Бот запущен и планировщик уведомлений активен!")
     
     # ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ (ВАЖНО!)
     await db.init_pool()
