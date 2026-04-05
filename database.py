@@ -555,5 +555,44 @@ class Database:
             return [{"date": r[0], "time": r[1], "drink_type": r[2], "amount": r[3]} for r in rows]
         
         return []
-
+    # === ДЛЯ НОВЫХ КНОПОК ===
+    def get_note_by_id(self, user_id, note_id):
+        """Получить заметку по ID"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, text, date, time FROM notes WHERE user_id = ? AND id = ?", (user_id, note_id))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return {"id": row[0], "text": row[1], "date": row[2], "time": row[3]}
+        return None
+    
+    def get_reminder_by_id(self, user_id, reminder_id):
+        """Получить напоминание по ID"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, text, date, time FROM reminders 
+            WHERE user_id = ? AND id = ? AND is_active = 1
+        ''', (user_id, reminder_id))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return {"id": row[0], "text": row[1], "date": row[2], "time": row[3]}
+        return None
+    
+    def edit_note(self, user_id, note_id, new_text):
+        """Редактировать заметку"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        local_dt = self.get_user_local_datetime(user_id)
+        cursor.execute('''
+            UPDATE notes 
+            SET text = ?, date = ?, time = ?, timestamp = ?
+            WHERE user_id = ? AND id = ?
+        ''', (new_text, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"),
+              datetime.utcnow().isoformat(), user_id, note_id))
+        conn.commit()
+        conn.close()
+        return True
 db = Database()
