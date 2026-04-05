@@ -12,7 +12,6 @@ class Database:
         self.pool = None
 
     async def init_pool(self):
-        """Создаёт пул соединений с PostgreSQL"""
         self.pool = await asyncpg.create_pool(
             DATABASE_URL,
             min_size=1,
@@ -24,7 +23,6 @@ class Database:
 
     async def _init_tables(self):
         async with self.pool.acquire() as conn:
-            # users
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     user_id BIGINT PRIMARY KEY,
@@ -32,8 +30,6 @@ class Database:
                     created_at TIMESTAMP
                 )
             ''')
-            
-            # sleep
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS sleep (
                     id SERIAL PRIMARY KEY,
@@ -47,8 +43,6 @@ class Database:
                     note TEXT
                 )
             ''')
-            
-            # checkins
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS checkins (
                     id SERIAL PRIMARY KEY,
@@ -63,8 +57,6 @@ class Database:
                     note TEXT
                 )
             ''')
-            
-            # day_summary
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS day_summary (
                     id SERIAL PRIMARY KEY,
@@ -78,8 +70,6 @@ class Database:
                     note TEXT
                 )
             ''')
-            
-            # food
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS food (
                     id SERIAL PRIMARY KEY,
@@ -91,8 +81,6 @@ class Database:
                     food_text TEXT
                 )
             ''')
-            
-            # drinks
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS drinks (
                     id SERIAL PRIMARY KEY,
@@ -104,8 +92,6 @@ class Database:
                     amount TEXT
                 )
             ''')
-            
-            # notes
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS notes (
                     id SERIAL PRIMARY KEY,
@@ -116,8 +102,6 @@ class Database:
                     timestamp TIMESTAMP
                 )
             ''')
-            
-            # reminders
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS reminders (
                     id SERIAL PRIMARY KEY,
@@ -133,7 +117,6 @@ class Database:
                 )
             ''')
 
-    # === ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ===
     async def get_user_timezone(self, user_id):
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow("SELECT timezone_offset FROM users WHERE user_id = $1", user_id)
@@ -160,7 +143,6 @@ class Database:
         dt = await self.get_user_local_datetime(user_id)
         return dt.hour
 
-    # === СОН ===
     async def has_sleep_today(self, user_id):
         today = await self.get_user_local_date(user_id)
         async with self.pool.acquire() as conn:
@@ -177,7 +159,6 @@ class Database:
             ''', user_id, await self.get_user_local_date(user_id), bed_time, wake_time, quality, 1 if woke_night else 0, note)
         return True
 
-    # === ЧЕК-ИН ===
     async def add_checkin(self, user_id, time_slot, energy, stress, emotions, note=""):
         local_dt = await self.get_user_local_datetime(user_id)
         async with self.pool.acquire() as conn:
@@ -188,7 +169,6 @@ class Database:
                time_slot, energy, stress, json.dumps(emotions, ensure_ascii=False), note)
         return True
 
-    # === ИТОГ ДНЯ ===
     async def get_target_date_for_summary(self, user_id):
         local_hour = await self.get_user_local_hour(user_id)
         if local_hour >= 18:
@@ -217,7 +197,6 @@ class Database:
             ''', user_id, target_date, score, best, worst, gratitude, note)
         return True
 
-    # === ЕДА ===
     async def add_food(self, user_id, meal_type, food_text):
         local_dt = await self.get_user_local_datetime(user_id)
         async with self.pool.acquire() as conn:
@@ -227,7 +206,6 @@ class Database:
             ''', user_id, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"), meal_type, food_text)
         return True
 
-    # === НАПИТКИ ===
     async def add_drink(self, user_id, drink_type, amount):
         local_dt = await self.get_user_local_datetime(user_id)
         async with self.pool.acquire() as conn:
@@ -237,7 +215,6 @@ class Database:
             ''', user_id, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"), drink_type, amount)
         return True
 
-    # === ЗАМЕТКИ ===
     async def add_note(self, user_id, text):
         local_dt = await self.get_user_local_datetime(user_id)
         async with self.pool.acquire() as conn:
@@ -258,7 +235,6 @@ class Database:
             result = await conn.execute("DELETE FROM notes WHERE user_id = $1 AND id = $2", user_id, note_id)
             return result != "DELETE 0"
 
-    # === НАПОМИНАНИЯ ===
     async def add_reminder(self, user_id, text, target_date, target_time, advance_type=None, parent_id=None, is_custom=False):
         local_dt = await self.get_user_local_datetime(user_id)
         target_dt = datetime.strptime(f"{target_date} {target_time}", "%Y-%m-%d %H:%M")
@@ -307,13 +283,11 @@ class Database:
         async with self.pool.acquire() as conn:
             await conn.execute("UPDATE reminders SET is_active = 0 WHERE user_id = $1 AND id = $2", user_id, reminder_id)
 
-    # === ЕДА+НАПИТКИ ЗА СЕГОДНЯ ===
     async def get_today_food_and_drinks(self, user_id):
         today = await self.get_user_local_date(user_id)
         async with self.pool.acquire() as conn:
             food_rows = await conn.fetch("SELECT time, meal_type, food_text FROM food WHERE user_id = $1 AND date = $2", user_id, today)
             drink_rows = await conn.fetch("SELECT time, drink_type, amount FROM drinks WHERE user_id = $1 AND date = $2", user_id, today)
-        
         combined = []
         for r in food_rows:
             combined.append({"type": "🍽 Еда", "time": r[0], "text": f"{r[1]}: {r[2]}"})
@@ -322,7 +296,6 @@ class Database:
         combined.sort(key=lambda x: x["time"])
         return combined
 
-    # === СТАТИСТИКА ===
     async def get_stats(self, user_id):
         async with self.pool.acquire() as conn:
             sleep_count = (await conn.fetchval("SELECT COUNT(*) FROM sleep WHERE user_id = $1", user_id)) or 0
@@ -331,10 +304,8 @@ class Database:
             drinks_count = (await conn.fetchval("SELECT COUNT(*) FROM drinks WHERE user_id = $1", user_id)) or 0
             notes_count = (await conn.fetchval("SELECT COUNT(*) FROM notes WHERE user_id = $1", user_id)) or 0
             reminders_count = (await conn.fetchval("SELECT COUNT(*) FROM reminders WHERE user_id = $1 AND is_active = 1", user_id)) or 0
-            
             last_sleep = await conn.fetchrow("SELECT bed_time, wake_time, quality FROM sleep WHERE user_id = $1 ORDER BY id DESC LIMIT 1", user_id)
             last_checkin = await conn.fetchrow("SELECT energy, stress, emotions FROM checkins WHERE user_id = $1 ORDER BY id DESC LIMIT 1", user_id)
-        
         text = f"📊 ТВОЯ СТАТИСТИКА\n\n"
         text += f"😴 Сон: {sleep_count} записей\n"
         text += f"⚡️ Чек-ины: {checkins_count} записей\n"
@@ -342,17 +313,14 @@ class Database:
         text += f"🥤 Напитки: {drinks_count} записей\n"
         text += f"📝 Заметки: {notes_count} записей\n"
         text += f"⏰ Активных напоминаний: {reminders_count}\n"
-        
         if last_sleep:
             text += f"\n😴 Последний сон:\n   Лег: {last_sleep[0]}, встал: {last_sleep[1]}\n   Качество: {last_sleep[2]}/10"
         if last_checkin:
             emotions = json.loads(last_checkin[2]) if last_checkin[2] else []
             emotions_str = ", ".join(emotions) or "не указаны"
             text += f"\n\n⚡️ Последний чек-ин:\n   Энергия: {last_checkin[0]}/10, стресс: {last_checkin[1]}/10\n   Эмоции: {emotions_str}"
-        
         return text
 
-    # === ЭКСПОРТ ===
     async def export_all(self, user_id):
         async with self.pool.acquire() as conn:
             export_data = {
@@ -366,43 +334,33 @@ class Database:
                 "notes": [],
                 "reminders": []
             }
-            
             rows = await conn.fetch("SELECT date, bed_time, wake_time, quality, woke_night, note FROM sleep WHERE user_id = $1", user_id)
             for r in rows:
                 export_data["sleep"].append({"date": r[0], "bed_time": r[1], "wake_time": r[2], "quality": r[3], "woke_night": bool(r[4]), "note": r[5]})
-            
             rows = await conn.fetch("SELECT date, time, time_slot, energy, stress, emotions, note FROM checkins WHERE user_id = $1", user_id)
             for r in rows:
                 export_data["checkins"].append({"date": r[0], "time": r[1], "time_slot": r[2], "energy": r[3], "stress": r[4], "emotions": json.loads(r[5]) if r[5] else [], "note": r[6]})
-            
             rows = await conn.fetch("SELECT date, score, best, worst, gratitude, note FROM day_summary WHERE user_id = $1", user_id)
             for r in rows:
                 export_data["day_summary"].append({"date": r[0], "score": r[1], "best": r[2], "worst": r[3], "gratitude": r[4], "note": r[5]})
-            
             rows = await conn.fetch("SELECT date, time, meal_type, food_text FROM food WHERE user_id = $1", user_id)
             for r in rows:
                 export_data["food"].append({"date": r[0], "time": r[1], "meal_type": r[2], "food_text": r[3]})
-            
             rows = await conn.fetch("SELECT date, time, drink_type, amount FROM drinks WHERE user_id = $1", user_id)
             for r in rows:
                 export_data["drinks"].append({"date": r[0], "time": r[1], "drink_type": r[2], "amount": r[3]})
-            
             rows = await conn.fetch("SELECT text, date, time FROM notes WHERE user_id = $1", user_id)
             for r in rows:
                 export_data["notes"].append({"text": r[0], "date": r[1], "time": r[2]})
-            
             rows = await conn.fetch("SELECT text, date, time, advance_type, parent_id, is_custom FROM reminders WHERE user_id = $1 AND is_active = 1", user_id)
             for r in rows:
                 export_data["reminders"].append({"text": r[0], "date": r[1], "time": r[2], "advance_type": r[3], "parent_id": r[4], "is_custom": bool(r[5])})
-        
-        # Сохраняем в JSON файл (всё ещё локально, для отправки пользователю)
         file_path = os.path.join("data", str(user_id), "export_all.json")
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(export_data, f, ensure_ascii=False, indent=2)
         return file_path
 
-    # === ДЛЯ AI СОВЕТА (синхронные методы, но теперь асинхронные) ===
     async def _load_json(self, user_id, filename):
         async with self.pool.acquire() as conn:
             if filename == "sleep.json":
