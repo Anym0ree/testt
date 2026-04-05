@@ -17,7 +17,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from aiohttp import web
 
 from config import BOT_TOKEN, OPENAI_API_KEY
-from database import db
+from database_pg import db
 from keyboards import *
 from states import *
 from ai_advisor import AIAdvisor
@@ -219,7 +219,7 @@ async def cmd_start(message: types.Message):
     await show_start_flow(message.from_user.id, message.chat.id)
 
 async def show_start_flow(user_id: int, chat_id: int):
-    if db.get_user_timezone(user_id) == 0:
+    if await db.get_user_timezone(user_id) == 0:
         await bot.send_message(
             chat_id,
             "👋 Привет! Я твой личный дневник-трекер.\n\n"
@@ -266,7 +266,7 @@ async def timezone_city(message: types.Message, state: FSMContext):
         await edit_or_send(state, message.chat.id, "Введи смещение от UTC (например: -5, 0, +3):", get_back_button(), edit=False)
         return
     if message.text in CITY_TO_OFFSET:
-        db.set_user_timezone(message.from_user.id, CITY_TO_OFFSET[message.text])
+        await db.set_user_timezone(message.from_user.id, CITY_TO_OFFSET[message.text])
         await delete_dialog_message(state)
         await state.finish()
         await message.answer(
@@ -294,7 +294,7 @@ async def timezone_offset(message: types.Message, state: FSMContext):
     if offset < -12 or offset > 14:
         await send_temp_message(message.chat.id, "❌ Смещение должно быть в диапазоне от -12 до +14.", 3)
         return
-    db.set_user_timezone(message.from_user.id, offset)
+    await db.set_user_timezone(message.from_user.id, offset)
     await delete_dialog_message(state)
     await state.finish()
     await message.answer(
@@ -306,7 +306,7 @@ async def timezone_offset(message: types.Message, state: FSMContext):
 # ========== СОН ==========
 @dp.message_handler(text="🛌 Сон")
 async def sleep_start(message: types.Message, state: FSMContext):
-    if db.has_sleep_today(message.from_user.id):
+    if await db.has_sleep_today(message.from_user.id):
         await send_temp_message(message.chat.id, "🛌 Сон за сегодня уже записан.", 3)
         return
     await SleepStates.bed_time.set()
@@ -373,7 +373,7 @@ async def sleep_note(message: types.Message, state: FSMContext):
         return
     data = await state.get_data()
     note = "" if message.text == "Пропустить" else message.text
-    saved = db.add_sleep(
+    saved = await db.add_sleep(
         message.from_user.id,
         data.get("bed_time"),
         data.get("wake_time"),
@@ -449,7 +449,7 @@ async def checkin_note(message: types.Message, state: FSMContext):
         return
     data = await state.get_data()
     note = "" if message.text == "Пропустить" else message.text
-    db.add_checkin(
+    await db.add_checkin(
         message.from_user.id,
         "manual",
         data.get("energy"),
@@ -465,11 +465,11 @@ async def checkin_note(message: types.Message, state: FSMContext):
 # ========== ИТОГ ДНЯ ==========
 @dp.message_handler(text="📝 Итог дня")
 async def day_summary_start(message: types.Message, state: FSMContext):
-    target_date = db.get_target_date_for_summary(message.from_user.id)
+    target_date = await db.get_target_date_for_summary(message.from_user.id)
     if target_date is None:
         await send_temp_message(message.chat.id, "🕕 Итог дня доступен с 18:00 до 06:00 по твоему часовому поясу.", 4)
         return
-    if db.has_day_summary_for_date(message.from_user.id, target_date):
+    if await db.has_day_summary_for_date(message.from_user.id, target_date):
         await send_temp_message(message.chat.id, f"📝 Итог за {target_date} уже сохранён.", 4)
         return
     await DaySummaryStates.score.set()
@@ -524,7 +524,7 @@ async def summary_note(message: types.Message, state: FSMContext):
         return
     data = await state.get_data()
     note = "" if message.text == "Пропустить" else message.text
-    success = db.add_day_summary(
+    success = await db.add_day_summary(
         message.from_user.id,
         data["score"],
         data["best"],
@@ -569,7 +569,7 @@ async def add_food_drink_type(message: types.Message, state: FSMContext):
 
 @dp.message_handler(text="📋 Посмотреть сегодня")
 async def view_food_drink_today(message: types.Message):
-    items = db.get_today_food_and_drinks(message.from_user.id)
+    items = await db.get_today_food_and_drinks(message.from_user.id)
     if not items:
         await message.answer("🍽🥤 За сегодня ещё нет записей о еде и напитках.", reply_markup=get_food_drink_menu())
         return
@@ -593,7 +593,7 @@ async def food_text(message: types.Message, state: FSMContext):
         await safe_finish(state, message, "Добавление отменено")
         return
     data = await state.get_data()
-    db.add_food(message.from_user.id, data["meal_type"], message.text)
+    await db.add_food(message.from_user.id, data["meal_type"], message.text)
     await delete_dialog_message(state)
     await state.finish()
     await send_temp_message(message.chat.id, f"✅ Добавлено: {data['meal_type']} — {message.text}", 2)
@@ -625,7 +625,7 @@ async def drink_amount(message: types.Message, state: FSMContext):
         await state.update_data(awaiting_custom_drink_amount=False)
     drink_type = data["drink_type"]
     amount = message.text
-    db.add_drink(message.from_user.id, drink_type, amount)
+    await db.add_drink(message.from_user.id, drink_type, amount)
     await delete_dialog_message(state)
     await state.finish()
     await send_temp_message(message.chat.id, f"✅ Добавлено: {drink_type} — {amount}", 2)
@@ -652,7 +652,7 @@ async def create_note_text(message: types.Message, state: FSMContext):
         await safe_finish(state, message)
         await notes_reminders_main(message)
         return
-    db.add_note(message.from_user.id, message.text)
+    await db.add_note(message.from_user.id, message.text)
     await delete_dialog_message(state)
     await state.finish()
     await send_temp_message(message.chat.id, "✅ Заметка сохранена!", 2)
@@ -835,7 +835,7 @@ async def reminder_advance(message: types.Message, state: FSMContext):
             await edit_or_send(state, message.chat.id, "❌ Выбранное доп.напоминание попадает в прошлое или слишком близко — выбери другой вариант.", get_reminder_advance_buttons(), edit=True)
             return
 
-    reminder_id = db.add_reminder(message.from_user.id, text, target_date, time_str, advance_type)
+    reminder_id = await db.add_reminder(message.from_user.id, text, target_date, time_str, advance_type)
     await delete_dialog_message(state)
     await state.finish()
     if reminder_id is None:
@@ -883,7 +883,7 @@ async def reminder_custom_time(message: types.Message, state: FSMContext):
     text = data['text']
     target_date_str = data['date']
     time_str = f"{data['hour']:02d}:{data['minute']}"
-    main_id = db.add_reminder(message.from_user.id, text, target_date_str, time_str, advance_type=None)
+    main_id = await db.add_reminder(message.from_user.id, text, target_date_str, time_str, advance_type=None)
 
     if not main_id:
         await send_temp_message(message.chat.id, "❌ Не удалось создать напоминание.", 3)
@@ -891,7 +891,7 @@ async def reminder_custom_time(message: types.Message, state: FSMContext):
         return
 
     adv_text = f"🔔 Напоминание: {text}"
-    db.add_reminder(message.from_user.id, adv_text, target_date_str, custom_time, advance_type=None, parent_id=main_id, is_custom=True)
+    await db.add_reminder(message.from_user.id, adv_text, target_date_str, custom_time, advance_type=None, parent_id=main_id, is_custom=True)
 
     await delete_dialog_message(state)
     await state.finish()
@@ -908,7 +908,7 @@ async def view_records(message: types.Message, state: FSMContext):
 @dp.message_handler(text="📋 Заметки")
 async def list_notes(message: types.Message, state: FSMContext):
     await state.finish()
-    notes = db.get_notes(message.from_user.id)
+    notes = await db.get_notes(message.from_user.id)
     if not notes:
         await message.answer("📋 У тебя пока нет заметок.", reply_markup=get_notes_reminders_main_menu())
         return
@@ -925,7 +925,7 @@ async def list_notes(message: types.Message, state: FSMContext):
 @dp.message_handler(text="⏰ Напоминания")
 async def list_reminders(message: types.Message, state: FSMContext):
     await state.finish()
-    reminders = db.get_active_reminders(message.from_user.id)
+    reminders = await db.get_active_reminders(message.from_user.id)
     if not reminders:
         await message.answer("📋 У тебя пока нет активных напоминаний.", reply_markup=get_notes_reminders_main_menu())
         return
@@ -949,7 +949,7 @@ async def copy_note(message: types.Message, state: FSMContext):
     if not match:
         return
     index = int(match.group(1))
-    notes = db.get_notes(message.from_user.id)
+    notes = await db.get_notes(message.from_user.id)
     if not notes:
         await send_temp_message(message.chat.id, "❌ Заметок нет.", 3)
         return
@@ -974,7 +974,7 @@ async def edit_note_or_reminder(message: types.Message, state: FSMContext):
     index = int(match.group(1))
 
     if last_section == 'notes':
-        notes = db.get_notes(message.from_user.id)
+        notes = await db.get_notes(message.from_user.id)
         if not notes:
             await send_temp_message(message.chat.id, "❌ Заметок нет.", 3)
             return
@@ -983,13 +983,13 @@ async def edit_note_or_reminder(message: types.Message, state: FSMContext):
             await send_temp_message(message.chat.id, f"❌ Неверный номер. Доступно заметок: {len(visible)}", 3)
             return
         note = visible[index-1]
-        db.delete_note_by_id(message.from_user.id, note['id'])
+        await db.delete_note_by_id(message.from_user.id, note['id'])
         await NoteStates.text.set()
         await state.update_data(edit_note_text=note['text'])
         await edit_or_send(state, message.chat.id, f"✏️ *Редактирование заметки*\n\nТекущий текст:\n{note['text']}\n\nВведи новый текст заметки (или оставь как есть):", get_back_button(), edit=False)
 
     elif last_section == 'reminders':
-        reminders = db.get_active_reminders(message.from_user.id)
+        reminders = await db.get_active_reminders(message.from_user.id)
         if not reminders:
             await send_temp_message(message.chat.id, "❌ Напоминаний нет.", 3)
             return
@@ -999,7 +999,7 @@ async def edit_note_or_reminder(message: types.Message, state: FSMContext):
             return
         reminder = main_reminders[index-1]
         await state.update_data(edit_reminder_data=reminder)
-        db.delete_reminder(message.from_user.id, reminder['id'])
+        await db.delete_reminder(message.from_user.id, reminder['id'])
         await ReminderStates.text.set()
         await state.update_data(edit_reminder_text=reminder['text'])
         await edit_or_send(state, message.chat.id, f"✏️ *Редактирование напоминания*\n\nТекущий текст:\n{reminder['text']}\n\nВведи новый текст (или оставь как есть):", get_back_button(), edit=False)
@@ -1019,7 +1019,7 @@ async def delete_item(message: types.Message, state: FSMContext):
     index = int(match.group(1))
 
     if last_section == 'notes':
-        notes = db.get_notes(message.from_user.id)
+        notes = await db.get_notes(message.from_user.id)
         if not notes:
             await send_temp_message(message.chat.id, "❌ Заметок нет.", 3)
             return
@@ -1028,11 +1028,11 @@ async def delete_item(message: types.Message, state: FSMContext):
             await send_temp_message(message.chat.id, f"❌ Неверный номер. Доступно заметок: {len(visible)}", 3)
             return
         note = visible[index-1]
-        db.delete_note_by_id(message.from_user.id, note['id'])
+        await db.delete_note_by_id(message.from_user.id, note['id'])
         await send_temp_message(message.chat.id, f"✅ Заметка {index} удалена.", 3)
 
     elif last_section == 'reminders':
-        reminders = db.get_active_reminders(message.from_user.id)
+        reminders = await db.get_active_reminders(message.from_user.id)
         if not reminders:
             await send_temp_message(message.chat.id, "❌ Напоминаний нет.", 3)
             return
@@ -1041,7 +1041,7 @@ async def delete_item(message: types.Message, state: FSMContext):
             await send_temp_message(message.chat.id, f"❌ Неверный номер. Доступно основных напоминаний: {len(main_reminders)}", 3)
             return
         reminder = main_reminders[index-1]
-        db.delete_reminder(message.from_user.id, reminder['id'])
+        await db.delete_reminder(message.from_user.id, reminder['id'])
         await send_temp_message(message.chat.id, f"✅ Напоминание {index} и связанные с ним удалены.", 3)
     else:
         await send_temp_message(message.chat.id, "❌ Неизвестный раздел.", 3)
@@ -1062,13 +1062,13 @@ async def ai_advice_start(message: types.Message, state: FSMContext):
 
     if not history:
         user_data = {
-            "sleep": db._load_json(user_id, "sleep.json"),
-            "checkins": db._load_json(user_id, "checkins.json"),
-            "day_summary": db._load_json(user_id, "day_summary.json"),
-            "notes": db._load_json(user_id, "notes.json"),
-            "reminders": db._load_json(user_id, "reminders.json"),
-            "food": db._load_json(user_id, "food.json"),
-            "drinks": db._load_json(user_id, "drinks.json")
+            "sleep": await db._load_json(user_id, "sleep.json"),
+            "checkins": await db._load_json(user_id, "checkins.json"),
+            "day_summary": await db._load_json(user_id, "day_summary.json"),
+            "notes": await db._load_json(user_id, "notes.json"),
+            "reminders": await db._load_json(user_id, "reminders.json"),
+            "food": await db._load_json(user_id, "food.json"),
+            "drinks": await db._load_json(user_id, "drinks.json")
         }
         ai_advisor.set_user_data(user_id, user_data)
 
@@ -1111,13 +1111,13 @@ async def ai_question(message: types.Message, state: FSMContext):
 
     if not ai_advisor.get_user_data(user_id):
         user_data = {
-            "sleep": db._load_json(user_id, "sleep.json"),
-            "checkins": db._load_json(user_id, "checkins.json"),
-            "day_summary": db._load_json(user_id, "day_summary.json"),
-            "notes": db._load_json(user_id, "notes.json"),
-            "reminders": db._load_json(user_id, "reminders.json"),
-            "food": db._load_json(user_id, "food.json"),
-            "drinks": db._load_json(user_id, "drinks.json"),
+            "sleep": await db._load_json(user_id, "sleep.json"),
+            "checkins": await db._load_json(user_id, "checkins.json"),
+            "day_summary": await db._load_json(user_id, "day_summary.json"),
+            "notes": await db._load_json(user_id, "notes.json"),
+            "reminders": await db._load_json(user_id, "reminders.json"),
+            "food": await db._load_json(user_id, "food.json"),
+            "drinks": await db._load_json(user_id, "drinks.json"),
         }
         ai_advisor.set_user_data(user_id, user_data)
 
@@ -1142,7 +1142,7 @@ async def ai_question(message: types.Message, state: FSMContext):
 # ========== СТАТИСТИКА ==========
 @dp.message_handler(text="📊 Статистика")
 async def stats(message: types.Message):
-    text = db.get_stats(message.from_user.id)
+    text = await db.get_stats(message.from_user.id)
     await message.answer(text, reply_markup=get_main_menu())
 
 # ========== ЭКСПОРТ ==========
@@ -1152,7 +1152,7 @@ async def export_menu(message: types.Message):
 
 @dp.message_handler(text="📥 Экспорт всех данных")
 async def export_all_data(message: types.Message):
-    file_path = db.export_all(message.from_user.id)
+    file_path = await db.export_all(message.from_user.id)
     with open(file_path, 'rb') as f:
         await message.answer_document(f, caption="📁 Вот все твои данные")
     await message.answer("Главное меню", reply_markup=get_main_menu())
@@ -1701,37 +1701,37 @@ async def check_custom_reminders():
         now_utc = datetime.utcnow()
         for user_id, settings_data in all_data.items():
             user_id = int(user_id)
-            tz = db.get_user_timezone(user_id)
+            tz = await db.get_user_timezone(user_id)
             if tz == 0:
                 continue
             user_time = now_utc + timedelta(hours=tz)
             current_time = user_time.strftime("%H:%M")
             if settings_data["sleep"]["enabled"]:
                 if settings_data["sleep"]["time"] == current_time:
-                    if not db.has_sleep_today(user_id):
+                    if not await db.has_sleep_today(user_id):
                         await bot.send_message(user_id, "🛌 Пора записать сон")
             if settings_data["checkins"]["enabled"]:
                 for t in settings_data["checkins"]["times"]:
                     if t == current_time:
-                        checkins = db._load_json(user_id, "checkins.json")
+                        checkins = await db._load_json(user_id, "checkins.json")
                         today_str = user_time.strftime("%Y-%m-%d")
                         has_today_checkin = any(c.get("date") == today_str for c in checkins)
                         if not has_today_checkin:
                             await bot.send_message(user_id, "⚡️ Сделай чек-ин")
             if settings_data["summary"]["enabled"]:
                 if settings_data["summary"]["time"] == current_time:
-                    if db.get_target_date_for_summary(user_id):
+                    if await db.get_target_date_for_summary(user_id):
                         await bot.send_message(user_id, "📝 Не забудь подвести итог дня")
     except Exception as e:
         logging.error(f"Ошибка кастомных напоминаний: {e}")
 
 async def check_reminders():
-    due_reminders = db.get_reminders_due_now()
+    due_reminders = await db.get_reminders_due_now()
     for user_id, reminder in due_reminders:
         try:
             text = reminder["text"]
             await bot.send_message(user_id, f"⏰ НАПОМИНАНИЕ!\n\n{text}")
-            db.mark_reminder_sent(user_id, reminder["id"])
+            await db.mark_reminder_sent(user_id, reminder["id"])
             logging.info(f"Отправлено напоминание {reminder['id']} пользователю {user_id}")
         except Exception as e:
             logging.error(f"Ошибка отправки напоминания {reminder['id']}: {e}")
@@ -1756,6 +1756,9 @@ async def on_startup(dp):
     global scheduler
     await bot.delete_webhook(drop_pending_updates=True)
     await asyncio.sleep(3)
+    
+    # ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ (ВАЖНО!)
+    await db.init_pool()
     
     asyncio.create_task(run_http_server())
     scheduler = AsyncIOScheduler(timezone="UTC")
