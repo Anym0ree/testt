@@ -1,411 +1,318 @@
-import sqlite3
 import json
 import os
 import logging
 from datetime import datetime, timedelta
-from config import DATA_FOLDER
+import asyncpg
+from config import DATABASE_URL
 
 logging.basicConfig(level=logging.INFO)
 
 class Database:
     def __init__(self):
-        self.data_folder = DATA_FOLDER
-        if not os.path.exists(self.data_folder):
-            os.makedirs(self.data_folder)
-        self.db_path = os.path.join(self.data_folder, "bot.db")
-        self._init_db()
+        self.pool = None
 
-    def _get_connection(self):
-        return sqlite3.connect(self.db_path)
+    async def init_pool(self):
+        """Создаёт пул соединений с PostgreSQL"""
+        self.pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            min_size=1,
+            max_size=10,
+            command_timeout=60
+        )
+        await self._init_tables()
+        logging.info("✅ PostgreSQL подключён!")
 
-    def _init_db(self):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                timezone_offset INTEGER DEFAULT 0,
-                created_at TEXT
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS sleep (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                date TEXT,
-                timestamp TEXT,
-                bed_time TEXT,
-                wake_time TEXT,
-                quality INTEGER,
-                woke_night INTEGER,
-                note TEXT
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS checkins (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                date TEXT,
-                time TEXT,
-                timestamp TEXT,
-                time_slot TEXT,
-                energy INTEGER,
-                stress INTEGER,
-                emotions TEXT,
-                note TEXT
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS day_summary (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                date TEXT,
-                timestamp TEXT,
-                score INTEGER,
-                best TEXT,
-                worst TEXT,
-                gratitude TEXT,
-                note TEXT
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS food (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                date TEXT,
-                time TEXT,
-                timestamp TEXT,
-                meal_type TEXT,
-                food_text TEXT
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS drinks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                date TEXT,
-                time TEXT,
-                timestamp TEXT,
-                drink_type TEXT,
-                amount TEXT
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS notes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                text TEXT,
-                date TEXT,
-                time TEXT,
-                timestamp TEXT
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS reminders (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                text TEXT,
-                date TEXT,
-                time TEXT,
-                advance_type TEXT,
-                parent_id INTEGER,
-                is_custom INTEGER DEFAULT 0,
-                is_active INTEGER DEFAULT 1,
-                created_at TEXT
-            )
-        ''')
-        
-        conn.commit()
-        conn.close()
+    async def _init_tables(self):
+        async with self.pool.acquire() as conn:
+            # users
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id BIGINT PRIMARY KEY,
+                    timezone_offset INTEGER DEFAULT 0,
+                    created_at TIMESTAMP
+                )
+            ''')
+            
+            # sleep
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS sleep (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    date TEXT,
+                    timestamp TIMESTAMP,
+                    bed_time TEXT,
+                    wake_time TEXT,
+                    quality INTEGER,
+                    woke_night INTEGER,
+                    note TEXT
+                )
+            ''')
+            
+            # checkins
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS checkins (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    date TEXT,
+                    time TEXT,
+                    timestamp TIMESTAMP,
+                    time_slot TEXT,
+                    energy INTEGER,
+                    stress INTEGER,
+                    emotions TEXT,
+                    note TEXT
+                )
+            ''')
+            
+            # day_summary
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS day_summary (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    date TEXT,
+                    timestamp TIMESTAMP,
+                    score INTEGER,
+                    best TEXT,
+                    worst TEXT,
+                    gratitude TEXT,
+                    note TEXT
+                )
+            ''')
+            
+            # food
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS food (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    date TEXT,
+                    time TEXT,
+                    timestamp TIMESTAMP,
+                    meal_type TEXT,
+                    food_text TEXT
+                )
+            ''')
+            
+            # drinks
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS drinks (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    date TEXT,
+                    time TEXT,
+                    timestamp TIMESTAMP,
+                    drink_type TEXT,
+                    amount TEXT
+                )
+            ''')
+            
+            # notes
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS notes (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    text TEXT,
+                    date TEXT,
+                    time TEXT,
+                    timestamp TIMESTAMP
+                )
+            ''')
+            
+            # reminders
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS reminders (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    text TEXT,
+                    date TEXT,
+                    time TEXT,
+                    advance_type TEXT,
+                    parent_id INTEGER,
+                    is_custom INTEGER DEFAULT 0,
+                    is_active INTEGER DEFAULT 1,
+                    created_at TIMESTAMP
+                )
+            ''')
 
     # === ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ===
-    def get_user_timezone(self, user_id):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT timezone_offset FROM users WHERE user_id = ?", (user_id,))
-        row = cursor.fetchone()
-        conn.close()
-        return row[0] if row else 0
+    async def get_user_timezone(self, user_id):
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT timezone_offset FROM users WHERE user_id = $1", user_id)
+            return row[0] if row else 0
 
-    def set_user_timezone(self, user_id, timezone_offset):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT OR REPLACE INTO users (user_id, timezone_offset, created_at)
-            VALUES (?, ?, COALESCE((SELECT created_at FROM users WHERE user_id = ?), ?))
-        ''', (user_id, timezone_offset, user_id, datetime.utcnow().isoformat()))
-        conn.commit()
-        conn.close()
+    async def set_user_timezone(self, user_id, timezone_offset):
+        async with self.pool.acquire() as conn:
+            await conn.execute('''
+                INSERT INTO users (user_id, timezone_offset, created_at)
+                VALUES ($1, $2, COALESCE((SELECT created_at FROM users WHERE user_id = $1), NOW()))
+                ON CONFLICT (user_id) DO UPDATE SET timezone_offset = $2
+            ''', user_id, timezone_offset)
 
-    def get_user_local_datetime(self, user_id):
-        offset = self.get_user_timezone(user_id)
+    async def get_user_local_datetime(self, user_id):
+        offset = await self.get_user_timezone(user_id)
         utc_now = datetime.utcnow()
         return utc_now + timedelta(hours=offset)
 
-    def get_user_local_date(self, user_id):
-        return self.get_user_local_datetime(user_id).strftime("%Y-%m-%d")
+    async def get_user_local_date(self, user_id):
+        dt = await self.get_user_local_datetime(user_id)
+        return dt.strftime("%Y-%m-%d")
 
-    def get_user_local_hour(self, user_id):
-        return self.get_user_local_datetime(user_id).hour
+    async def get_user_local_hour(self, user_id):
+        dt = await self.get_user_local_datetime(user_id)
+        return dt.hour
 
     # === СОН ===
-    def has_sleep_today(self, user_id):
-        today = self.get_user_local_date(user_id)
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT 1 FROM sleep WHERE user_id = ? AND date = ? LIMIT 1", (user_id, today))
-        result = cursor.fetchone() is not None
-        conn.close()
-        return result
+    async def has_sleep_today(self, user_id):
+        today = await self.get_user_local_date(user_id)
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT 1 FROM sleep WHERE user_id = $1 AND date = $2 LIMIT 1", user_id, today)
+            return row is not None
 
-    def add_sleep(self, user_id, bed_time, wake_time, quality, woke_night, note=""):
-        if self.has_sleep_today(user_id):
+    async def add_sleep(self, user_id, bed_time, wake_time, quality, woke_night, note=""):
+        if await self.has_sleep_today(user_id):
             return False
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO sleep (user_id, date, timestamp, bed_time, wake_time, quality, woke_night, note)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (user_id, self.get_user_local_date(user_id), datetime.utcnow().isoformat(),
-              bed_time, wake_time, quality, 1 if woke_night else 0, note))
-        conn.commit()
-        conn.close()
+        async with self.pool.acquire() as conn:
+            await conn.execute('''
+                INSERT INTO sleep (user_id, date, timestamp, bed_time, wake_time, quality, woke_night, note)
+                VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7)
+            ''', user_id, await self.get_user_local_date(user_id), bed_time, wake_time, quality, 1 if woke_night else 0, note)
         return True
 
     # === ЧЕК-ИН ===
-    def add_checkin(self, user_id, time_slot, energy, stress, emotions, note=""):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        local_dt = self.get_user_local_datetime(user_id)
-        cursor.execute('''
-            INSERT INTO checkins (user_id, date, time, timestamp, time_slot, energy, stress, emotions, note)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (user_id, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"),
-              datetime.utcnow().isoformat(), time_slot, energy, stress, json.dumps(emotions, ensure_ascii=False), note))
-        conn.commit()
-        conn.close()
+    async def add_checkin(self, user_id, time_slot, energy, stress, emotions, note=""):
+        local_dt = await self.get_user_local_datetime(user_id)
+        async with self.pool.acquire() as conn:
+            await conn.execute('''
+                INSERT INTO checkins (user_id, date, time, timestamp, time_slot, energy, stress, emotions, note)
+                VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $8)
+            ''', user_id, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"),
+               time_slot, energy, stress, json.dumps(emotions, ensure_ascii=False), note)
         return True
 
     # === ИТОГ ДНЯ ===
-    def get_target_date_for_summary(self, user_id):
-        local_hour = self.get_user_local_hour(user_id)
+    async def get_target_date_for_summary(self, user_id):
+        local_hour = await self.get_user_local_hour(user_id)
         if local_hour >= 18:
-            return self.get_user_local_date(user_id)
+            return await self.get_user_local_date(user_id)
         elif local_hour < 6:
-            offset = self.get_user_timezone(user_id)
+            offset = await self.get_user_timezone(user_id)
             utc_now = datetime.utcnow()
             yesterday = utc_now - timedelta(days=1)
             local_yesterday = yesterday + timedelta(hours=offset)
             return local_yesterday.strftime("%Y-%m-%d")
-        else:
-            return None
+        return None
 
-    def has_day_summary_for_date(self, user_id, date_str):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT 1 FROM day_summary WHERE user_id = ? AND date = ? LIMIT 1", (user_id, date_str))
-        result = cursor.fetchone() is not None
-        conn.close()
-        return result
+    async def has_day_summary_for_date(self, user_id, date_str):
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT 1 FROM day_summary WHERE user_id = $1 AND date = $2 LIMIT 1", user_id, date_str)
+            return row is not None
 
-    def add_day_summary(self, user_id, score, best, worst, gratitude, note=""):
-        target_date = self.get_target_date_for_summary(user_id)
-        if target_date is None or self.has_day_summary_for_date(user_id, target_date):
+    async def add_day_summary(self, user_id, score, best, worst, gratitude, note=""):
+        target_date = await self.get_target_date_for_summary(user_id)
+        if target_date is None or await self.has_day_summary_for_date(user_id, target_date):
             return False
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO day_summary (user_id, date, timestamp, score, best, worst, gratitude, note)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (user_id, target_date, datetime.utcnow().isoformat(), score, best, worst, gratitude, note))
-        conn.commit()
-        conn.close()
+        async with self.pool.acquire() as conn:
+            await conn.execute('''
+                INSERT INTO day_summary (user_id, date, timestamp, score, best, worst, gratitude, note)
+                VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7)
+            ''', user_id, target_date, score, best, worst, gratitude, note)
         return True
 
     # === ЕДА ===
-    def add_food(self, user_id, meal_type, food_text):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        local_dt = self.get_user_local_datetime(user_id)
-        cursor.execute('''
-            INSERT INTO food (user_id, date, time, timestamp, meal_type, food_text)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (user_id, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"),
-              datetime.utcnow().isoformat(), meal_type, food_text))
-        conn.commit()
-        conn.close()
+    async def add_food(self, user_id, meal_type, food_text):
+        local_dt = await self.get_user_local_datetime(user_id)
+        async with self.pool.acquire() as conn:
+            await conn.execute('''
+                INSERT INTO food (user_id, date, time, timestamp, meal_type, food_text)
+                VALUES ($1, $2, $3, NOW(), $4, $5)
+            ''', user_id, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"), meal_type, food_text)
         return True
 
     # === НАПИТКИ ===
-    def add_drink(self, user_id, drink_type, amount):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        local_dt = self.get_user_local_datetime(user_id)
-        cursor.execute('''
-            INSERT INTO drinks (user_id, date, time, timestamp, drink_type, amount)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (user_id, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"),
-              datetime.utcnow().isoformat(), drink_type, amount))
-        conn.commit()
-        conn.close()
+    async def add_drink(self, user_id, drink_type, amount):
+        local_dt = await self.get_user_local_datetime(user_id)
+        async with self.pool.acquire() as conn:
+            await conn.execute('''
+                INSERT INTO drinks (user_id, date, time, timestamp, drink_type, amount)
+                VALUES ($1, $2, $3, NOW(), $4, $5)
+            ''', user_id, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"), drink_type, amount)
         return True
 
     # === ЗАМЕТКИ ===
-    def add_note(self, user_id, text):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        local_dt = self.get_user_local_datetime(user_id)
-        cursor.execute('''
-            INSERT INTO notes (user_id, text, date, time, timestamp)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (user_id, text, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"),
-              datetime.utcnow().isoformat()))
-        conn.commit()
-        note_id = cursor.lastrowid
-        conn.close()
-        return note_id
+    async def add_note(self, user_id, text):
+        local_dt = await self.get_user_local_datetime(user_id)
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow('''
+                INSERT INTO notes (user_id, text, date, time, timestamp)
+                VALUES ($1, $2, $3, $4, NOW())
+                RETURNING id
+            ''', user_id, text, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"))
+            return row[0]
 
-    def get_notes(self, user_id):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, text, date, time FROM notes WHERE user_id = ? ORDER BY id DESC", (user_id,))
-        rows = cursor.fetchall()
-        conn.close()
-        return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3]} for r in rows]
+    async def get_notes(self, user_id):
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("SELECT id, text, date, time FROM notes WHERE user_id = $1 ORDER BY id DESC", user_id)
+            return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3]} for r in rows]
 
-    def delete_note_by_id(self, user_id, note_id):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM notes WHERE user_id = ? AND id = ?", (user_id, note_id))
-        affected = cursor.rowcount
-        conn.commit()
-        conn.close()
-        return affected > 0
-
-    def edit_note(self, user_id, note_id, new_text):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        local_dt = self.get_user_local_datetime(user_id)
-        cursor.execute('''
-            UPDATE notes SET text = ?, date = ?, time = ?, timestamp = ?
-            WHERE user_id = ? AND id = ?
-        ''', (new_text, local_dt.strftime("%Y-%m-%d"), local_dt.strftime("%H:%M"),
-              datetime.utcnow().isoformat(), user_id, note_id))
-        conn.commit()
-        conn.close()
-        return True
-
-    def get_note_by_id(self, user_id, note_id):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, text, date, time FROM notes WHERE user_id = ? AND id = ?", (user_id, note_id))
-        row = cursor.fetchone()
-        conn.close()
-        if row:
-            return {"id": row[0], "text": row[1], "date": row[2], "time": row[3]}
-        return None
+    async def delete_note_by_id(self, user_id, note_id):
+        async with self.pool.acquire() as conn:
+            result = await conn.execute("DELETE FROM notes WHERE user_id = $1 AND id = $2", user_id, note_id)
+            return result != "DELETE 0"
 
     # === НАПОМИНАНИЯ ===
-    def add_reminder(self, user_id, text, target_date, target_time, advance_type=None, parent_id=None, is_custom=False):
-        local_dt = self.get_user_local_datetime(user_id)
+    async def add_reminder(self, user_id, text, target_date, target_time, advance_type=None, parent_id=None, is_custom=False):
+        local_dt = await self.get_user_local_datetime(user_id)
         target_dt = datetime.strptime(f"{target_date} {target_time}", "%Y-%m-%d %H:%M")
         if target_dt < local_dt:
             return None
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO reminders (user_id, text, date, time, advance_type, parent_id, is_custom, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (user_id, text, target_date, target_time, advance_type, parent_id, 1 if is_custom else 0,
-              datetime.utcnow().isoformat()))
-        conn.commit()
-        reminder_id = cursor.lastrowid
-        conn.close()
-        return reminder_id
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow('''
+                INSERT INTO reminders (user_id, text, date, time, advance_type, parent_id, is_custom, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                RETURNING id
+            ''', user_id, text, target_date, target_time, advance_type, parent_id, 1 if is_custom else 0)
+            return row[0]
 
-    def get_active_reminders(self, user_id):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT id, text, date, time, advance_type, parent_id, is_custom
-            FROM reminders WHERE user_id = ? AND is_active = 1
-            ORDER BY date, time
-        ''', (user_id,))
-        rows = cursor.fetchall()
-        conn.close()
-        return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3],
-                 "advance_type": r[4], "parent_id": r[5], "is_custom": r[6]} for r in rows]
+    async def get_active_reminders(self, user_id):
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch('''
+                SELECT id, text, date, time, advance_type, parent_id, is_custom
+                FROM reminders WHERE user_id = $1 AND is_active = 1
+                ORDER BY date, time
+            ''', user_id)
+            return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3],
+                     "advance_type": r[4], "parent_id": r[5], "is_custom": r[6]} for r in rows]
 
-    def delete_reminder(self, user_id, reminder_id):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("UPDATE reminders SET is_active = 0 WHERE user_id = ? AND (id = ? OR parent_id = ?)",
-                      (user_id, reminder_id, reminder_id))
-        conn.commit()
-        conn.close()
+    async def delete_reminder(self, user_id, reminder_id):
+        async with self.pool.acquire() as conn:
+            await conn.execute("UPDATE reminders SET is_active = 0 WHERE user_id = $1 AND (id = $2 OR parent_id = $2)", user_id, reminder_id)
         return True
 
-    def get_reminder_by_id(self, user_id, reminder_id):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT id, text, date, time FROM reminders 
-            WHERE user_id = ? AND id = ? AND is_active = 1
-        ''', (user_id, reminder_id))
-        row = cursor.fetchone()
-        conn.close()
-        if row:
-            return {"id": row[0], "text": row[1], "date": row[2], "time": row[3]}
-        return None
+    async def get_reminders_due_now(self):
+        result = []
+        async with self.pool.acquire() as conn:
+            users = await conn.fetch("SELECT DISTINCT user_id FROM reminders WHERE is_active = 1")
+            for (user_id,) in users:
+                local_dt = await self.get_user_local_datetime(user_id)
+                local_date = local_dt.strftime("%Y-%m-%d")
+                local_minute = local_dt.strftime("%H:%M")
+                rows = await conn.fetch('''
+                    SELECT id, text FROM reminders
+                    WHERE user_id = $1 AND is_active = 1 AND date = $2 AND time = $3
+                ''', user_id, local_date, local_minute)
+                for r in rows:
+                    result.append((user_id, {"id": r[0], "text": r[1]}))
+        return result
 
-    def get_reminders_due_now(self):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        due = []
-        cursor.execute("SELECT DISTINCT user_id FROM reminders WHERE is_active = 1")
-        users = cursor.fetchall()
-        for (user_id,) in users:
-            local_dt = self.get_user_local_datetime(user_id)
-            local_date = local_dt.strftime("%Y-%m-%d")
-            local_minute = local_dt.strftime("%H:%M")
-            cursor.execute('''
-                SELECT id, text FROM reminders
-                WHERE user_id = ? AND is_active = 1 AND date = ? AND time = ?
-            ''', (user_id, local_date, local_minute))
-            reminders = cursor.fetchall()
-            for r in reminders:
-                due.append((user_id, {"id": r[0], "text": r[1]}))
-        conn.close()
-        return due
+    async def mark_reminder_sent(self, user_id, reminder_id):
+        async with self.pool.acquire() as conn:
+            await conn.execute("UPDATE reminders SET is_active = 0 WHERE user_id = $1 AND id = $2", user_id, reminder_id)
 
-    def mark_reminder_sent(self, user_id, reminder_id):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("UPDATE reminders SET is_active = 0 WHERE user_id = ? AND id = ?", (user_id, reminder_id))
-        conn.commit()
-        conn.close()
-
-    # === ЕДА + НАПИТКИ ЗА СЕГОДНЯ ===
-    def get_today_food_and_drinks(self, user_id):
-        today = self.get_user_local_date(user_id)
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT time, meal_type, food_text FROM food WHERE user_id = ? AND date = ?", (user_id, today))
-        food_rows = cursor.fetchall()
-        
-        cursor.execute("SELECT time, drink_type, amount FROM drinks WHERE user_id = ? AND date = ?", (user_id, today))
-        drink_rows = cursor.fetchall()
-        
-        conn.close()
+    # === ЕДА+НАПИТКИ ЗА СЕГОДНЯ ===
+    async def get_today_food_and_drinks(self, user_id):
+        today = await self.get_user_local_date(user_id)
+        async with self.pool.acquire() as conn:
+            food_rows = await conn.fetch("SELECT time, meal_type, food_text FROM food WHERE user_id = $1 AND date = $2", user_id, today)
+            drink_rows = await conn.fetch("SELECT time, drink_type, amount FROM drinks WHERE user_id = $1 AND date = $2", user_id, today)
         
         combined = []
         for r in food_rows:
@@ -416,35 +323,17 @@ class Database:
         return combined
 
     # === СТАТИСТИКА ===
-    def get_stats(self, user_id):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT COUNT(*) FROM sleep WHERE user_id = ?", (user_id,))
-        sleep_count = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM checkins WHERE user_id = ?", (user_id,))
-        checkins_count = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM food WHERE user_id = ?", (user_id,))
-        food_count = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM drinks WHERE user_id = ?", (user_id,))
-        drinks_count = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM notes WHERE user_id = ?", (user_id,))
-        notes_count = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM reminders WHERE user_id = ? AND is_active = 1", (user_id,))
-        reminders_count = cursor.fetchone()[0]
-        
-        cursor.execute('''SELECT bed_time, wake_time, quality FROM sleep WHERE user_id = ? ORDER BY id DESC LIMIT 1''', (user_id,))
-        last_sleep = cursor.fetchone()
-        
-        cursor.execute('''SELECT energy, stress, emotions FROM checkins WHERE user_id = ? ORDER BY id DESC LIMIT 1''', (user_id,))
-        last_checkin = cursor.fetchone()
-        
-        conn.close()
+    async def get_stats(self, user_id):
+        async with self.pool.acquire() as conn:
+            sleep_count = (await conn.fetchval("SELECT COUNT(*) FROM sleep WHERE user_id = $1", user_id)) or 0
+            checkins_count = (await conn.fetchval("SELECT COUNT(*) FROM checkins WHERE user_id = $1", user_id)) or 0
+            food_count = (await conn.fetchval("SELECT COUNT(*) FROM food WHERE user_id = $1", user_id)) or 0
+            drinks_count = (await conn.fetchval("SELECT COUNT(*) FROM drinks WHERE user_id = $1", user_id)) or 0
+            notes_count = (await conn.fetchval("SELECT COUNT(*) FROM notes WHERE user_id = $1", user_id)) or 0
+            reminders_count = (await conn.fetchval("SELECT COUNT(*) FROM reminders WHERE user_id = $1 AND is_active = 1", user_id)) or 0
+            
+            last_sleep = await conn.fetchrow("SELECT bed_time, wake_time, quality FROM sleep WHERE user_id = $1 ORDER BY id DESC LIMIT 1", user_id)
+            last_checkin = await conn.fetchrow("SELECT energy, stress, emotions FROM checkins WHERE user_id = $1 ORDER BY id DESC LIMIT 1", user_id)
         
         text = f"📊 ТВОЯ СТАТИСТИКА\n\n"
         text += f"😴 Сон: {sleep_count} записей\n"
@@ -464,113 +353,79 @@ class Database:
         return text
 
     # === ЭКСПОРТ ===
-    def export_all(self, user_id):
-        conn = self._get_connection()
-        cursor = conn.cursor()
+    async def export_all(self, user_id):
+        async with self.pool.acquire() as conn:
+            export_data = {
+                "user_id": user_id,
+                "export_date": datetime.utcnow().isoformat(),
+                "sleep": [],
+                "checkins": [],
+                "day_summary": [],
+                "food": [],
+                "drinks": [],
+                "notes": [],
+                "reminders": []
+            }
+            
+            rows = await conn.fetch("SELECT date, bed_time, wake_time, quality, woke_night, note FROM sleep WHERE user_id = $1", user_id)
+            for r in rows:
+                export_data["sleep"].append({"date": r[0], "bed_time": r[1], "wake_time": r[2], "quality": r[3], "woke_night": bool(r[4]), "note": r[5]})
+            
+            rows = await conn.fetch("SELECT date, time, time_slot, energy, stress, emotions, note FROM checkins WHERE user_id = $1", user_id)
+            for r in rows:
+                export_data["checkins"].append({"date": r[0], "time": r[1], "time_slot": r[2], "energy": r[3], "stress": r[4], "emotions": json.loads(r[5]) if r[5] else [], "note": r[6]})
+            
+            rows = await conn.fetch("SELECT date, score, best, worst, gratitude, note FROM day_summary WHERE user_id = $1", user_id)
+            for r in rows:
+                export_data["day_summary"].append({"date": r[0], "score": r[1], "best": r[2], "worst": r[3], "gratitude": r[4], "note": r[5]})
+            
+            rows = await conn.fetch("SELECT date, time, meal_type, food_text FROM food WHERE user_id = $1", user_id)
+            for r in rows:
+                export_data["food"].append({"date": r[0], "time": r[1], "meal_type": r[2], "food_text": r[3]})
+            
+            rows = await conn.fetch("SELECT date, time, drink_type, amount FROM drinks WHERE user_id = $1", user_id)
+            for r in rows:
+                export_data["drinks"].append({"date": r[0], "time": r[1], "drink_type": r[2], "amount": r[3]})
+            
+            rows = await conn.fetch("SELECT text, date, time FROM notes WHERE user_id = $1", user_id)
+            for r in rows:
+                export_data["notes"].append({"text": r[0], "date": r[1], "time": r[2]})
+            
+            rows = await conn.fetch("SELECT text, date, time, advance_type, parent_id, is_custom FROM reminders WHERE user_id = $1 AND is_active = 1", user_id)
+            for r in rows:
+                export_data["reminders"].append({"text": r[0], "date": r[1], "time": r[2], "advance_type": r[3], "parent_id": r[4], "is_custom": bool(r[5])})
         
-        export_data = {
-            "user_id": user_id,
-            "export_date": datetime.utcnow().isoformat(),
-            "sleep": [],
-            "checkins": [],
-            "day_summary": [],
-            "food": [],
-            "drinks": [],
-            "notes": [],
-            "reminders": []
-        }
-        
-        cursor.execute("SELECT date, bed_time, wake_time, quality, woke_night, note FROM sleep WHERE user_id = ?", (user_id,))
-        for row in cursor.fetchall():
-            export_data["sleep"].append({"date": row[0], "bed_time": row[1], "wake_time": row[2],
-                                         "quality": row[3], "woke_night": bool(row[4]), "note": row[5]})
-        
-        cursor.execute("SELECT date, time, time_slot, energy, stress, emotions, note FROM checkins WHERE user_id = ?", (user_id,))
-        for row in cursor.fetchall():
-            export_data["checkins"].append({"date": row[0], "time": row[1], "time_slot": row[2],
-                                            "energy": row[3], "stress": row[4],
-                                            "emotions": json.loads(row[5]) if row[5] else [], "note": row[6]})
-        
-        cursor.execute("SELECT date, score, best, worst, gratitude, note FROM day_summary WHERE user_id = ?", (user_id,))
-        for row in cursor.fetchall():
-            export_data["day_summary"].append({"date": row[0], "score": row[1], "best": row[2],
-                                               "worst": row[3], "gratitude": row[4], "note": row[5]})
-        
-        cursor.execute("SELECT date, time, meal_type, food_text FROM food WHERE user_id = ?", (user_id,))
-        for row in cursor.fetchall():
-            export_data["food"].append({"date": row[0], "time": row[1], "meal_type": row[2], "food_text": row[3]})
-        
-        cursor.execute("SELECT date, time, drink_type, amount FROM drinks WHERE user_id = ?", (user_id,))
-        for row in cursor.fetchall():
-            export_data["drinks"].append({"date": row[0], "time": row[1], "drink_type": row[2], "amount": row[3]})
-        
-        cursor.execute("SELECT text, date, time FROM notes WHERE user_id = ?", (user_id,))
-        for row in cursor.fetchall():
-            export_data["notes"].append({"text": row[0], "date": row[1], "time": row[2]})
-        
-        cursor.execute("SELECT text, date, time, advance_type, parent_id, is_custom FROM reminders WHERE user_id = ? AND is_active = 1", (user_id,))
-        for row in cursor.fetchall():
-            export_data["reminders"].append({"text": row[0], "date": row[1], "time": row[2],
-                                             "advance_type": row[3], "parent_id": row[4], "is_custom": bool(row[5])})
-        
-        conn.close()
-        
-        file_path = os.path.join(self.data_folder, str(user_id), "export_all.json")
+        # Сохраняем в JSON файл (всё ещё локально, для отправки пользователю)
+        file_path = os.path.join("data", str(user_id), "export_all.json")
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(export_data, f, ensure_ascii=False, indent=2)
-        
         return file_path
 
-    # === ДЛЯ AI СОВЕТА ===
-    def _load_json(self, user_id, filename):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        
-        if filename == "sleep.json":
-            cursor.execute("SELECT date, bed_time, wake_time, quality, woke_night, note FROM sleep WHERE user_id = ?", (user_id,))
-            rows = cursor.fetchall()
-            conn.close()
-            return [{"date": r[0], "bed_time": r[1], "wake_time": r[2], "quality": r[3], "woke_night": bool(r[4]), "note": r[5]} for r in rows]
-        
-        elif filename == "checkins.json":
-            cursor.execute("SELECT date, time, energy, stress, emotions, note FROM checkins WHERE user_id = ?", (user_id,))
-            rows = cursor.fetchall()
-            conn.close()
-            return [{"date": r[0], "time": r[1], "energy": r[2], "stress": r[3], "emotions": json.loads(r[4]) if r[4] else [], "note": r[5]} for r in rows]
-        
-        elif filename == "day_summary.json":
-            cursor.execute("SELECT date, score, best, worst, gratitude, note FROM day_summary WHERE user_id = ?", (user_id,))
-            rows = cursor.fetchall()
-            conn.close()
-            return [{"date": r[0], "score": r[1], "best": r[2], "worst": r[3], "gratitude": r[4], "note": r[5]} for r in rows]
-        
-        elif filename == "notes.json":
-            cursor.execute("SELECT id, text, date, time FROM notes WHERE user_id = ?", (user_id,))
-            rows = cursor.fetchall()
-            conn.close()
-            return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3]} for r in rows]
-        
-        elif filename == "reminders.json":
-            cursor.execute("SELECT id, text, date, time, advance_type, parent_id, is_custom, is_active FROM reminders WHERE user_id = ?", (user_id,))
-            rows = cursor.fetchall()
-            conn.close()
-            return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3], "advance_type": r[4],
-                     "parent_id": r[5], "is_custom": bool(r[6]), "is_active": bool(r[7])} for r in rows]
-        
-        elif filename == "food.json":
-            cursor.execute("SELECT date, time, meal_type, food_text FROM food WHERE user_id = ?", (user_id,))
-            rows = cursor.fetchall()
-            conn.close()
-            return [{"date": r[0], "time": r[1], "meal_type": r[2], "food_text": r[3]} for r in rows]
-        
-        elif filename == "drinks.json":
-            cursor.execute("SELECT date, time, drink_type, amount FROM drinks WHERE user_id = ?", (user_id,))
-            rows = cursor.fetchall()
-            conn.close()
-            return [{"date": r[0], "time": r[1], "drink_type": r[2], "amount": r[3]} for r in rows]
-        
-        conn.close()
+    # === ДЛЯ AI СОВЕТА (синхронные методы, но теперь асинхронные) ===
+    async def _load_json(self, user_id, filename):
+        async with self.pool.acquire() as conn:
+            if filename == "sleep.json":
+                rows = await conn.fetch("SELECT date, bed_time, wake_time, quality, woke_night, note FROM sleep WHERE user_id = $1", user_id)
+                return [{"date": r[0], "bed_time": r[1], "wake_time": r[2], "quality": r[3], "woke_night": bool(r[4]), "note": r[5]} for r in rows]
+            elif filename == "checkins.json":
+                rows = await conn.fetch("SELECT date, time, energy, stress, emotions, note FROM checkins WHERE user_id = $1", user_id)
+                return [{"date": r[0], "time": r[1], "energy": r[2], "stress": r[3], "emotions": json.loads(r[4]) if r[4] else [], "note": r[5]} for r in rows]
+            elif filename == "day_summary.json":
+                rows = await conn.fetch("SELECT date, score, best, worst, gratitude, note FROM day_summary WHERE user_id = $1", user_id)
+                return [{"date": r[0], "score": r[1], "best": r[2], "worst": r[3], "gratitude": r[4], "note": r[5]} for r in rows]
+            elif filename == "notes.json":
+                rows = await conn.fetch("SELECT id, text, date, time FROM notes WHERE user_id = $1", user_id)
+                return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3]} for r in rows]
+            elif filename == "reminders.json":
+                rows = await conn.fetch("SELECT id, text, date, time, advance_type, parent_id, is_custom, is_active FROM reminders WHERE user_id = $1", user_id)
+                return [{"id": r[0], "text": r[1], "date": r[2], "time": r[3], "advance_type": r[4], "parent_id": r[5], "is_custom": bool(r[6]), "is_active": bool(r[7])} for r in rows]
+            elif filename == "food.json":
+                rows = await conn.fetch("SELECT date, time, meal_type, food_text FROM food WHERE user_id = $1", user_id)
+                return [{"date": r[0], "time": r[1], "meal_type": r[2], "food_text": r[3]} for r in rows]
+            elif filename == "drinks.json":
+                rows = await conn.fetch("SELECT date, time, drink_type, amount FROM drinks WHERE user_id = $1", user_id)
+                return [{"date": r[0], "time": r[1], "drink_type": r[2], "amount": r[3]} for r in rows]
         return []
 
 db = Database()
