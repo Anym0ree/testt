@@ -1764,10 +1764,8 @@ WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
 WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')}{WEBHOOK_PATH}"
 
 async def on_startup_webhook(dp):
-    # Принудительно удаляем старый webhook
     await bot.delete_webhook()
     await db.init_pool()
-    # Устанавливаем новый webhook
     await bot.set_webhook(WEBHOOK_URL)
     
     global scheduler
@@ -1777,36 +1775,27 @@ async def on_startup_webhook(dp):
     scheduler.start()
     
     logging.info(f"✅ Webhook установлен: {WEBHOOK_URL}")
-    logging.info("🤖 Бот запущен и планировщик уведомлений активен!")
 
 async def on_shutdown_webhook(dp):
     await bot.delete_webhook()
     if scheduler and scheduler.running:
         scheduler.shutdown()
-    await db.close_pool()
-
-# ========== ЗАПУСК ==========
-# ========== ЗАПУСК (POLLING - временно) ==========
-async def on_startup_polling(dp):
-    await bot.delete_webhook()  # Обязательно удаляем вебхук
-    await db.init_pool()
-    
-    global scheduler
-    scheduler = AsyncIOScheduler(timezone="UTC")
-    scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
-    scheduler.add_job(check_custom_reminders, IntervalTrigger(minutes=1))
-    scheduler.start()
-    logging.info("✅ Бот запущен в polling режиме!")
-
-async def on_shutdown_polling(dp):
-    if scheduler and scheduler.running:
-        scheduler.shutdown()
-    await db.close_pool()
+    # Убедись, что метод закрытия правильный
+    if hasattr(db, 'close_pool'):
+        await db.close_pool()
+    elif hasattr(db, 'close'):
+        await db.close()
 
 if __name__ == "__main__":
-    executor.start_polling(
-        dp,
-        on_startup=on_startup_polling,
-        on_shutdown=on_shutdown_polling,
-        skip_updates=True
+    # Render использует PORT из переменных окружения
+    port = int(os.environ.get("PORT", 10000))
+    
+    executor.start_webhook(
+        dispatcher=dp,
+        webhook_path=WEBHOOK_PATH,
+        on_startup=on_startup_webhook,
+        on_shutdown=on_shutdown_webhook,
+        skip_updates=True,
+        host="0.0.0.0",
+        port=port
     )
