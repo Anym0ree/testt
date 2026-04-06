@@ -1759,6 +1759,13 @@ async def check_reminders():
         except Exception as e:
             logging.error(f"Ошибка отправки напоминания {reminder['id']}: {e}")
 
+# ========== ПРОСТОЙ HEALTH CHECK (без отдельного сервера) ==========
+from aiohttp import web
+
+# Добавляем простой обработчик для корневого пути
+async def root_handler(request):
+    return web.Response(text="Bot is alive! Use /webhook/TOKEN for Telegram updates")
+
 # ========== ЗАПУСК (WEBHOOK) ==========
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
 WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')}{WEBHOOK_PATH}"
@@ -1767,6 +1774,12 @@ async def on_startup_webhook(dp):
     await bot.delete_webhook()
     await db.init_pool()
     await bot.set_webhook(WEBHOOK_URL)
+    
+    # Добавляем корневой обработчик прямо в приложение вебхука
+    from aiogram.utils.executor import Executor
+    exec = Executor(dp)
+    exec.webhook_app.router.add_get('/', root_handler)
+    exec.webhook_app.router.add_get('/health', root_handler)
     
     global scheduler
     scheduler = AsyncIOScheduler(timezone="UTC")
@@ -1789,30 +1802,10 @@ async def on_shutdown_webhook(dp):
     except Exception as e:
         logging.error(f"Ошибка при закрытии БД: {e}")
 
-# Health check через отдельный поток (простой способ)
-from aiohttp import web
-
-async def health_check(request):
-    return web.Response(text="I am alive!")
-
-# Запускаем health check сервер отдельно
-async def run_health_server():
-    app = web.Application()
-    app.router.add_get('/health', health_check)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 8080)
-    await site.start()
-    logging.info("✅ Health check сервер запущен на порту 8080")
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     
     logging.info(f"🚀 Запуск вебхука на порту {port}")
-    
-    # Запускаем health check сервер в фоне
-    loop = asyncio.get_event_loop()
-    loop.create_task(run_health_server())
     
     executor.start_webhook(
         dispatcher=dp,
