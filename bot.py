@@ -1759,26 +1759,37 @@ async def check_reminders():
         except Exception as e:
             logging.error(f"Ошибка отправки напоминания {reminder['id']}: {e}")
 
-# ========== ЗАПУСК (WEBHOOK) ==========
-WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
-WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')}{WEBHOOK_PATH}"
+# ========== HEALTH CHECK ДЛЯ RENDER ==========
+async def health_check(request):
+    return web.Response(text="I am alive!")
 
-async def on_startup_webhook(dp):
+async def run_health_server():
+    app = web.Application()
+    app.router.add_get('/health', health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+    logging.info("✅ Health check сервер запущен на порту 8080")
+
+# ========== ЗАПУСК ==========
+async def on_startup_polling(dp):
+    # Запускаем health check сервер
+    asyncio.create_task(run_health_server())
+    
+    # Удаляем вебхук, если был
     await bot.delete_webhook()
+    
     await db.init_pool()
-    await bot.set_webhook(WEBHOOK_URL)
     
     global scheduler
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
     scheduler.add_job(check_custom_reminders, IntervalTrigger(minutes=1))
     scheduler.start()
-    
-    logging.info(f"✅ Webhook установлен: {WEBHOOK_URL}")
-    logging.info("🤖 Бот запущен и планировщик уведомлений активен!")
+    logging.info("✅ Бот запущен в polling режиме с health check!")
 
-async def on_shutdown_webhook(dp):
-    await bot.delete_webhook()
+async def on_shutdown_polling(dp):
     if scheduler and scheduler.running:
         scheduler.shutdown()
     try:
@@ -1790,17 +1801,9 @@ async def on_shutdown_webhook(dp):
         logging.error(f"Ошибка при закрытии БД: {e}")
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    
-    logging.info(f"🚀 Запуск вебхука на порту {port}")
-    
-    # Запускаем вебхук
-    executor.start_webhook(
-        dispatcher=dp,
-        webhook_path=WEBHOOK_PATH,
-        on_startup=on_startup_webhook,
-        on_shutdown=on_shutdown_webhook,
-        skip_updates=True,
-        host="0.0.0.0",
-        port=port
+    executor.start_polling(
+        dp,
+        on_startup=on_startup_polling,
+        on_shutdown=on_shutdown_polling,
+        skip_updates=True
     )
