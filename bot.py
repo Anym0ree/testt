@@ -22,6 +22,19 @@ from keyboards import *
 from states import *
 from ai_advisor import AIAdvisor
 
+# ========== БЛОКИРОВКА ДЛЯ RENDER ==========
+import fcntl
+import sys
+
+LOCK_FILE = "/tmp/bot.lock"
+
+try:
+    lock_fd = open(LOCK_FILE, 'w')
+    fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except IOError:
+    print("❌ Другой экземпляр бота уже запущен. Выход...")
+    sys.exit(0)
+
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
