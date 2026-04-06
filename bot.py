@@ -760,15 +760,32 @@ async def reminder_minute(message: types.Message, state: FSMContext):
     target_date = data["date"]
     time_str = f"{data['hour']:02d}:{message.text}"
 
+    # 🔧 ИСПРАВЛЕНИЕ: Получаем часовой пояс пользователя и конвертируем время
+    user_tz_offset = await db.get_user_timezone(message.from_user.id)
+    if user_tz_offset == 0:
+        user_tz_offset = 3  # По умолчанию Москва, если не установлен
+    
     try:
-        target_dt = datetime.strptime(f"{target_date} {time_str}", "%Y-%m-%d %H:%M")
-    except:
+        # Парсим дату и время в локальное время пользователя
+        target_local = datetime.strptime(f"{target_date} {time_str}", "%Y-%m-%d %H:%M")
+        
+        # Конвертируем в UTC для сравнения
+        target_utc = target_local - timedelta(hours=user_tz_offset)
+        now_utc = datetime.utcnow()
+        
+        # Проверяем, что напоминание не в прошлом и не слишком близко
+        if target_utc < now_utc:
+            await edit_or_send(state, message.chat.id, "❌ Нельзя создать напоминание на прошедшее время.", get_reminder_minute_buttons(), edit=True)
+            return
+        
+        if target_utc < now_utc + MIN_DELTA:
+            await edit_or_send(state, message.chat.id, f"❌ Нельзя установить напоминание раньше, чем через {int(MIN_DELTA.total_seconds()//60)} минут.", get_reminder_minute_buttons(), edit=True)
+            return
+            
+    except Exception as e:
+        logging.error(f"Ошибка парсинга даты: {e}")
         await edit_or_send(state, message.chat.id, "❌ Ошибка в дате/времени. Попробуй снова.", get_notes_reminders_main_menu(), edit=False)
         await state.finish()
-        return
-    now = datetime.now()
-    if target_dt < now + MIN_DELTA:
-        await edit_or_send(state, message.chat.id, f"❌ Нельзя установить напоминание раньше, чем через {int(MIN_DELTA.total_seconds()//60)} минут.", get_reminder_minute_buttons(), edit=True)
         return
 
     await state.update_data(minute=message.text)
@@ -807,42 +824,50 @@ async def reminder_advance(message: types.Message, state: FSMContext):
     text = data["text"]
     target_date = data["date"]
     time_str = f"{data['hour']:02d}:{data['minute']}"
+    
+    # 🔧 ИСПРАВЛЕНИЕ: Получаем часовой пояс пользователя
+    user_tz_offset = await db.get_user_timezone(message.from_user.id)
+    if user_tz_offset == 0:
+        user_tz_offset = 3
 
     try:
-        main_dt = datetime.strptime(f"{target_date} {time_str}", "%Y-%m-%d %H:%M")
-    except:
-        await edit_or_send(state, message.chat.id, "❌ Ошибка в дате/времени.", get_notes_reminders_main_menu(), edit=False)
-        await state.finish()
-        return
-    now = datetime.now()
-    if main_dt < now + MIN_DELTA:
-        await delete_dialog_message(state)
-        await state.finish()
-        await send_temp_message(message.chat.id, "❌ Нельзя создать напоминание на прошедшее или слишком близкое время.", 3)
-        await message.answer("Главное меню", reply_markup=get_main_menu())
-        return
-
-    if advance_type:
-        if advance_type == "day":
-            adv_dt = main_dt - timedelta(days=1)
-        elif advance_type == "3h":
-            adv_dt = main_dt - timedelta(hours=3)
-        elif advance_type == "1h":
-            adv_dt = main_dt - timedelta(hours=1)
-        else:
-            adv_dt = None
-        if adv_dt and adv_dt < now + MIN_DELTA:
-            await edit_or_send(state, message.chat.id, "❌ Выбранное доп.напоминание попадает в прошлое или слишком близко — выбери другой вариант.", get_reminder_advance_buttons(), edit=True)
+        target_local = datetime.strptime(f"{target_date} {time_str}", "%Y-%m-%d %H:%M")
+        target_utc = target_local - timedelta(hours=user_tz_offset)
+        now_utc = datetime.utcnow()
+        
+        if target_utc < now_utc + MIN_DELTA:
+            await delete_dialog_message(state)
+            await state.finish()
+            await send_temp_message(message.chat.id, "❌ Нельзя создать напоминание на прошедшее или слишком близкое время.", 3)
+            await message.answer("Главное меню", reply_markup=get_main_menu())
             return
 
-    reminder_id = await db.add_reminder(message.from_user.id, text, target_date, time_str, advance_type)
-    await delete_dialog_message(state)
-    await state.finish()
-    if reminder_id is None:
-        await send_temp_message(message.chat.id, "❌ Нельзя создать напоминание на прошедшее время.", 3)
-    else:
-        await send_temp_message(message.chat.id, f"✅ Напоминание добавлено!\n\n📝 {text}\n🕐 {target_date} {time_str}", 4)
-    await message.answer("Главное меню", reply_markup=get_main_menu())
+        if advance_type:
+            if advance_type == "day":
+                adv_dt = target_utc - timedelta(days=1)
+            elif advance_type == "3h":
+                adv_dt = target_utc - timedelta(hours=3)
+            elif advance_type == "1h":
+                adv_dt = target_utc - timedelta(hours=1)
+            else:
+                adv_dt = None
+            if adv_dt and adv_dt < now_utc + MIN_DELTA:
+                await edit_or_send(state, message.chat.id, "❌ Выбранное доп.напоминание попадает в прошлое или слишком близко — выбери другой вариант.", get_reminder_advance_buttons(), edit=True)
+                return
+
+        reminder_id = await db.add_reminder(message.from_user.id, text, target_date, time_str, advance_type)
+        await delete_dialog_message(state)
+        await state.finish()
+        if reminder_id is None:
+            await send_temp_message(message.chat.id, "❌ Нельзя создать напоминание на прошедшее время.", 3)
+        else:
+            await send_temp_message(message.chat.id, f"✅ Напоминание добавлено!\n\n📝 {text}\n🕐 {target_date} {time_str}", 4)
+        await message.answer("Главное меню", reply_markup=get_main_menu())
+        
+    except Exception as e:
+        logging.error(f"Ошибка создания напоминания: {e}")
+        await edit_or_send(state, message.chat.id, "❌ Ошибка в дате/времени. Попробуй снова.", get_notes_reminders_main_menu(), edit=False)
+        await state.finish()
 
 @dp.message_handler(state=ReminderStates.custom_time)
 async def reminder_custom_time(message: types.Message, state: FSMContext):
@@ -864,18 +889,25 @@ async def reminder_custom_time(message: types.Message, state: FSMContext):
     data = await state.get_data()
     target_date = data['date']
     custom_time = message.text
+    
+    # 🔧 ИСПРАВЛЕНИЕ: Получаем часовой пояс пользователя
+    user_tz_offset = await db.get_user_timezone(message.from_user.id)
+    if user_tz_offset == 0:
+        user_tz_offset = 3
+        
     try:
-        custom_dt = datetime.strptime(f"{target_date} {custom_time}", "%Y-%m-%d %H:%M")
-    except:
+        custom_local = datetime.strptime(f"{target_date} {custom_time}", "%Y-%m-%d %H:%M")
+        custom_utc = custom_local - timedelta(hours=user_tz_offset)
+        now_utc = datetime.utcnow()
+        
+        if custom_utc < now_utc + MIN_DELTA:
+            await send_temp_message(message.chat.id, f"❌ Доп. напоминание не может быть раньше, чем через {int(MIN_DELTA.total_seconds()//60)} минут от текущего момента.", 3)
+            await edit_or_send(state, message.chat.id, "✏️ Введи другое время:", get_back_button(), edit=True)
+            return
+    except Exception as e:
         await send_temp_message(message.chat.id, "❌ Ошибка даты/времени.", 3)
         await ReminderStates.advance.set()
         await edit_or_send(state, message.chat.id, "⏰ Выбери вариант доп. напоминания:", get_reminder_advance_buttons(), edit=True)
-        return
-
-    now = datetime.now()
-    if custom_dt < now + MIN_DELTA:
-        await send_temp_message(message.chat.id, f"❌ Доп. напоминание не может быть раньше, чем через {int(MIN_DELTA.total_seconds()//60)} минут от текущего момента.", 3)
-        await edit_or_send(state, message.chat.id, "✏️ Введи другое время:", get_back_button(), edit=True)
         return
 
     await state.update_data(custom_time=custom_time)
@@ -1734,68 +1766,22 @@ async def check_reminders():
         except Exception as e:
             logging.error(f"Ошибка отправки напоминания {reminder['id']}: {e}")
 
-# ========== WEBHOOK MODE (для Render) ==========
-WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
-WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')}{WEBHOOK_PATH}"
-
-async def on_startup_webhook(dp):
-    await bot.delete_webhook()
-    await db.init_pool()
-    await bot.set_webhook(WEBHOOK_URL)
-    
-    global scheduler
-    scheduler = AsyncIOScheduler(timezone="UTC")
-    scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
-    scheduler.add_job(check_custom_reminders, IntervalTrigger(minutes=1))
-    scheduler.start()
-    
-    print(f"✅ Webhook установлен: {WEBHOOK_URL}")
-    print("🤖 Бот запущен и планировщик уведомлений активен!")
-
-async def on_shutdown_webhook(dp):
-    await bot.delete_webhook()
-    if scheduler and scheduler.running:
-        scheduler.shutdown()
-# ========== POLLING MODE (устойчивый к перезапускам) ==========
+# ========== ЗАПУСК ==========
 async def on_startup_polling(dp):
-    # Ждём 5 секунд, чтобы старый процесс точно завершился
-    await asyncio.sleep(5)
-    
-    # Инициализация БД
     await db.init_pool()
-    
-    # Запуск планировщика
     global scheduler
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
     scheduler.add_job(check_custom_reminders, IntervalTrigger(minutes=1))
     scheduler.start()
-    
-    # Запускаем простой HTTP-сервер для healthcheck (чтобы Render не убивал бота)
-    asyncio.create_task(run_healthcheck_server())
-    
-    print("🤖 Бот запущен в режиме polling, планировщик активен!")
+    logging.info("Бот запущен!")
 
 async def on_shutdown_polling(dp):
     if scheduler and scheduler.running:
         scheduler.shutdown()
-
-async def run_healthcheck_server():
-    """Простой HTTP-сервер для Render healthcheck"""
-    port = int(os.environ.get("PORT", 10000))
-    app = web.Application()
-    app.router.add_get("/", lambda req: web.Response(text="OK"))
-    app.router.add_get("/health", lambda req: web.Response(text="OK"))
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    print(f"🌐 Healthcheck сервер запущен на порту {port}")
-    # Бесконечно ждём
-    await asyncio.Event().wait()
+    await db.close_pool()
 
 if __name__ == "__main__":
-    from aiogram import executor
     executor.start_polling(
         dp,
         on_startup=on_startup_polling,
