@@ -1759,19 +1759,22 @@ async def check_reminders():
         except Exception as e:
             logging.error(f"Ошибка отправки напоминания {reminder['id']}: {e}")
 
-# ========== ВЕСЬ ТВОЙ КОД ВЫШЕ (до запуска) ОСТАЁТСЯ ТАКИМ ЖЕ ==========
-# ... весь код до секции запуска ...
+# ========== HEALTH CHECK ДЛЯ UPTIMEROBOT ==========
+async def health_check(request):
+    """Простой эндпоинт для проверки, что бот жив"""
+    return web.Response(text="I am alive!")
 
-# ========== ЗАПУСК (WEBHOOK - ИСПРАВЛЕННЫЙ) ==========
+# ========== ЗАПУСК (WEBHOOK) ==========
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
 WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')}{WEBHOOK_PATH}"
 
 async def on_startup_webhook(dp):
-    # Удаляем старый вебхук, если был
     await bot.delete_webhook()
     await db.init_pool()
-    # Устанавливаем новый вебхук
     await bot.set_webhook(WEBHOOK_URL)
+    
+    # ДОБАВЛЯЕМ HEALTH CHECK В ВЕБ-ПРИЛОЖЕНИЕ
+    dp.webhook_app.router.add_get('/health', health_check)
     
     global scheduler
     scheduler = AsyncIOScheduler(timezone="UTC")
@@ -1786,7 +1789,6 @@ async def on_shutdown_webhook(dp):
     await bot.delete_webhook()
     if scheduler and scheduler.running:
         scheduler.shutdown()
-    # Исправленная ошибка close_pool
     try:
         if hasattr(db, 'close_pool'):
             await db.close_pool()
@@ -1796,7 +1798,6 @@ async def on_shutdown_webhook(dp):
         logging.error(f"Ошибка при закрытии БД: {e}")
 
 if __name__ == "__main__":
-    # Render передаёт порт через переменную PORT
     port = int(os.environ.get("PORT", 10000))
     
     logging.info(f"🚀 Запуск вебхука на порту {port}")
