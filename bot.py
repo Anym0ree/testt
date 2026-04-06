@@ -14,7 +14,6 @@ from aiogram.dispatcher import FSMContext
 from aiogram.utils import executor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from aiohttp import web
 
 from config import BOT_TOKEN, OPENAI_API_KEY
 from database_pg import db
@@ -760,20 +759,16 @@ async def reminder_minute(message: types.Message, state: FSMContext):
     target_date = data["date"]
     time_str = f"{data['hour']:02d}:{message.text}"
 
-    # 🔧 ИСПРАВЛЕНИЕ: Получаем часовой пояс пользователя и конвертируем время
+    # Получаем часовой пояс пользователя
     user_tz_offset = await db.get_user_timezone(message.from_user.id)
     if user_tz_offset == 0:
-        user_tz_offset = 3  # По умолчанию Москва, если не установлен
+        user_tz_offset = 3
     
     try:
-        # Парсим дату и время в локальное время пользователя
         target_local = datetime.strptime(f"{target_date} {time_str}", "%Y-%m-%d %H:%M")
-        
-        # Конвертируем в UTC для сравнения
         target_utc = target_local - timedelta(hours=user_tz_offset)
         now_utc = datetime.utcnow()
         
-        # Проверяем, что напоминание не в прошлом и не слишком близко
         if target_utc < now_utc:
             await edit_or_send(state, message.chat.id, "❌ Нельзя создать напоминание на прошедшее время.", get_reminder_minute_buttons(), edit=True)
             return
@@ -825,7 +820,6 @@ async def reminder_advance(message: types.Message, state: FSMContext):
     target_date = data["date"]
     time_str = f"{data['hour']:02d}:{data['minute']}"
     
-    # 🔧 ИСПРАВЛЕНИЕ: Получаем часовой пояс пользователя
     user_tz_offset = await db.get_user_timezone(message.from_user.id)
     if user_tz_offset == 0:
         user_tz_offset = 3
@@ -890,7 +884,6 @@ async def reminder_custom_time(message: types.Message, state: FSMContext):
     target_date = data['date']
     custom_time = message.text
     
-    # 🔧 ИСПРАВЛЕНИЕ: Получаем часовой пояс пользователя
     user_tz_offset = await db.get_user_timezone(message.from_user.id)
     if user_tz_offset == 0:
         user_tz_offset = 3
@@ -1766,7 +1759,7 @@ async def check_reminders():
         except Exception as e:
             logging.error(f"Ошибка отправки напоминания {reminder['id']}: {e}")
 
-# ========== ЗАПУСК ==========
+# ========== ЗАПУСК (ТОЛЬКО POLLING) ==========
 async def on_startup_polling(dp):
     await db.init_pool()
     global scheduler
@@ -1774,12 +1767,13 @@ async def on_startup_polling(dp):
     scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
     scheduler.add_job(check_custom_reminders, IntervalTrigger(minutes=1))
     scheduler.start()
-    logging.info("Бот запущен!")
+    logging.info("✅ Бот запущен в polling режиме!")
 
 async def on_shutdown_polling(dp):
     if scheduler and scheduler.running:
         scheduler.shutdown()
     await db.close_pool()
+    logging.info("🛑 Бот остановлен")
 
 if __name__ == "__main__":
     executor.start_polling(
