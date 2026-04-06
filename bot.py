@@ -759,7 +759,6 @@ async def reminder_minute(message: types.Message, state: FSMContext):
     target_date = data["date"]
     time_str = f"{data['hour']:02d}:{message.text}"
 
-    # Получаем часовой пояс пользователя
     user_tz_offset = await db.get_user_timezone(message.from_user.id)
     if user_tz_offset == 0:
         user_tz_offset = 3
@@ -1761,6 +1760,10 @@ async def check_reminders():
 
 # ========== ЗАПУСК (ТОЛЬКО POLLING) ==========
 async def on_startup_polling(dp):
+    # Принудительно удаляем webhook при старте
+    await bot.delete_webhook()
+    logging.info("Webhook удалён")
+    
     await db.init_pool()
     global scheduler
     scheduler = AsyncIOScheduler(timezone="UTC")
