@@ -1759,11 +1759,6 @@ async def check_reminders():
         except Exception as e:
             logging.error(f"Ошибка отправки напоминания {reminder['id']}: {e}")
 
-# ========== HEALTH CHECK ДЛЯ UPTIMEROBOT ==========
-async def health_check(request):
-    """Простой эндпоинт для проверки, что бот жив"""
-    return web.Response(text="I am alive!")
-
 # ========== ЗАПУСК (WEBHOOK) ==========
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
 WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')}{WEBHOOK_PATH}"
@@ -1794,21 +1789,31 @@ async def on_shutdown_webhook(dp):
     except Exception as e:
         logging.error(f"Ошибка при закрытии БД: {e}")
 
+# Health check через отдельный поток (простой способ)
+from aiohttp import web
+
+async def health_check(request):
+    return web.Response(text="I am alive!")
+
+# Запускаем health check сервер отдельно
+async def run_health_server():
+    app = web.Application()
+    app.router.add_get('/health', health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+    logging.info("✅ Health check сервер запущен на порту 8080")
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     
     logging.info(f"🚀 Запуск вебхука на порту {port}")
     
-    # СОЗДАЁМ ОТДЕЛЬНОЕ ВЕБ-ПРИЛОЖЕНИЕ ДЛЯ HEALTH CHECK
-    from aiohttp import web
+    # Запускаем health check сервер в фоне
+    loop = asyncio.get_event_loop()
+    loop.create_task(run_health_server())
     
-    # Основное веб-приложение для бота
-    web_app = web.Application()
-    
-    # Добавляем health check
-    web_app.router.add_get('/health', health_check)
-    
-    # Запускаем вебхук с нашим приложением
     executor.start_webhook(
         dispatcher=dp,
         webhook_path=WEBHOOK_PATH,
@@ -1816,6 +1821,5 @@ if __name__ == "__main__":
         on_shutdown=on_shutdown_webhook,
         skip_updates=True,
         host="0.0.0.0",
-        port=port,
-        web_app=web_app  # ← передаём наше приложение с health check
+        port=port
     )
