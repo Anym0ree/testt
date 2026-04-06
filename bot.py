@@ -1759,13 +1759,18 @@ async def check_reminders():
         except Exception as e:
             logging.error(f"Ошибка отправки напоминания {reminder['id']}: {e}")
 
-# ========== WEBHOOK MODE (для Render) ==========
+# ========== ВЕСЬ ТВОЙ КОД ВЫШЕ (до запуска) ОСТАЁТСЯ ТАКИМ ЖЕ ==========
+# ... весь код до секции запуска ...
+
+# ========== ЗАПУСК (WEBHOOK - ИСПРАВЛЕННЫЙ) ==========
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
 WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')}{WEBHOOK_PATH}"
 
 async def on_startup_webhook(dp):
+    # Удаляем старый вебхук, если был
     await bot.delete_webhook()
     await db.init_pool()
+    # Устанавливаем новый вебхук
     await bot.set_webhook(WEBHOOK_URL)
     
     global scheduler
@@ -1775,20 +1780,26 @@ async def on_startup_webhook(dp):
     scheduler.start()
     
     logging.info(f"✅ Webhook установлен: {WEBHOOK_URL}")
+    logging.info("🤖 Бот запущен и планировщик уведомлений активен!")
 
 async def on_shutdown_webhook(dp):
     await bot.delete_webhook()
     if scheduler and scheduler.running:
         scheduler.shutdown()
-    # Убедись, что метод закрытия правильный
-    if hasattr(db, 'close_pool'):
-        await db.close_pool()
-    elif hasattr(db, 'close'):
-        await db.close()
+    # Исправленная ошибка close_pool
+    try:
+        if hasattr(db, 'close_pool'):
+            await db.close_pool()
+        elif hasattr(db, 'close'):
+            await db.close()
+    except Exception as e:
+        logging.error(f"Ошибка при закрытии БД: {e}")
 
 if __name__ == "__main__":
-    # Render использует PORT из переменных окружения
+    # Render передаёт порт через переменную PORT
     port = int(os.environ.get("PORT", 10000))
+    
+    logging.info(f"🚀 Запуск вебхука на порту {port}")
     
     executor.start_webhook(
         dispatcher=dp,
