@@ -1773,9 +1773,6 @@ async def on_startup_webhook(dp):
     await db.init_pool()
     await bot.set_webhook(WEBHOOK_URL)
     
-    # ДОБАВЛЯЕМ HEALTH CHECK В ВЕБ-ПРИЛОЖЕНИЕ
-    dp.webhook_app.router.add_get('/health', health_check)
-    
     global scheduler
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(check_reminders, IntervalTrigger(minutes=1))
@@ -1802,6 +1799,16 @@ if __name__ == "__main__":
     
     logging.info(f"🚀 Запуск вебхука на порту {port}")
     
+    # СОЗДАЁМ ОТДЕЛЬНОЕ ВЕБ-ПРИЛОЖЕНИЕ ДЛЯ HEALTH CHECK
+    from aiohttp import web
+    
+    # Основное веб-приложение для бота
+    web_app = web.Application()
+    
+    # Добавляем health check
+    web_app.router.add_get('/health', health_check)
+    
+    # Запускаем вебхук с нашим приложением
     executor.start_webhook(
         dispatcher=dp,
         webhook_path=WEBHOOK_PATH,
@@ -1809,5 +1816,6 @@ if __name__ == "__main__":
         on_shutdown=on_shutdown_webhook,
         skip_updates=True,
         host="0.0.0.0",
-        port=port
+        port=port,
+        web_app=web_app  # ← передаём наше приложение с health check
     )
