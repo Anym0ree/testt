@@ -21,6 +21,9 @@ from keyboards import *
 from states import *
 from ai_advisor import AIAdvisor
 
+import os
+print("=== DEBUG: OPENAI_API_KEY =", os.environ.get("OPENAI_API_KEY", "НЕ НАЙДЕН")[:10], "...")
+
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
