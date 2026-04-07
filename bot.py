@@ -6,6 +6,7 @@ import tempfile
 import shutil
 from datetime import datetime, timedelta
 import json
+import random
 
 import yt_dlp
 from aiogram import Bot, Dispatcher, types
@@ -21,7 +22,6 @@ from keyboards import *
 from states import *
 from ai_advisor import AIAdvisor
 
-import os
 print("=== DEBUG: OPENAI_API_KEY =", os.environ.get("OPENAI_API_KEY", "НЕ НАЙДЕН")[:10], "...")
 
 logging.basicConfig(level=logging.INFO)
@@ -98,6 +98,14 @@ def is_valid_time_text(value: str) -> bool:
 def is_valid_score_text(value: str) -> bool:
     return value.isdigit() and 1 <= int(value) <= 10
 
+# Список User-Agent для ротации
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+]
+
 async def download_media_with_ytdlp(url: str, fmt: str, progress_msg: types.Message):
     loop = asyncio.get_running_loop()
     last_percent = {"value": 0.0}
@@ -128,21 +136,42 @@ async def download_media_with_ytdlp(url: str, fmt: str, progress_msg: types.Mess
         is_youtube = 'youtube.com' in url or 'youtu.be' in url
         tmp_dir = tempfile.gettempdir()
         outtmpl = os.path.join(tmp_dir, '%(title).120s-%(id)s.%(ext)s')
+        
+        # Базовые опции
         opts = {
             "outtmpl": outtmpl,
             "progress_hooks": [progress_hook],
             "noplaylist": False,
+            "retries": 10,
+            "fragment_retries": 10,
+            "sleep_interval": 5,
+            "sleep_requests": 5,
+            "throttledratelimit": 1000000,  # 1 MB/s
+            "concurrent_fragment_downloads": 4,
         }
+        
+        # User-Agent случайный
+        opts["user_agent"] = random.choice(USER_AGENTS)
+        
+        # Если есть файл cookies, используем
+        cookie_file = "cookies.txt"
+        if os.path.exists(cookie_file):
+            opts["cookiefile"] = cookie_file
+        
         if is_youtube:
             opts.update({
-                "extractor_args": {"youtube": {"player_client": ["android"], "skip": ["webpage"]}},
-                "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-                "sleep_interval": 5,
-                "sleep_requests": 5,
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["android", "ios"],
+                        "skip": ["webpage"]
+                    }
+                },
+                "format": "bestvideo[height<=720]+bestaudio/best[height<=720]",
             })
         else:
-            opts["user_agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-
+            opts["format"] = "best"
+        
+        # Формат
         if fmt == "MP3 (аудио)":
             opts.update({
                 "format": "bestaudio/best",
@@ -154,10 +183,8 @@ async def download_media_with_ytdlp(url: str, fmt: str, progress_msg: types.Mess
                 "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "wav"}],
             })
         elif fmt == "MP4 (видео)":
-            opts.update({"format": "bestvideo+bestaudio/best", "merge_output_format": "mp4"})
-        else:
-            opts["format"] = "best"
-
+            opts.update({"merge_output_format": "mp4"})
+        
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             downloaded_file = None
@@ -205,6 +232,23 @@ def get_default_reminders():
         "checkins": {"enabled": True, "times": ["12:00", "16:00", "20:00"]},
         "summary": {"enabled": True, "time": "22:30"}
     }
+
+# ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ ЕДЫ/НАПИТКОВ ==========
+async def ask_add_another(message: types.Message, state: FSMContext):
+    """Предложить добавить ещё еду/напитки или выйти в главное меню"""
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("➕ Добавить ещё", "🏠 Главное меню")
+    await message.answer("✅ Добавлено! Что дальше?", reply_markup=kb)
+    await state.set_state("waiting_add_another")
+
+@dp.message_handler(state="waiting_add_another")
+async def handle_add_another(message: types.Message, state: FSMContext):
+    if message.text == "➕ Добавить ещё":
+        await state.finish()
+        await add_food_drink_start(message, state)
+    else:
+        await state.finish()
+        await message.answer("Главное меню", reply_markup=get_main_menu())
 
 # ========== КОМАНДЫ ==========
 CITY_TO_OFFSET = {
@@ -599,7 +643,8 @@ async def food_text(message: types.Message, state: FSMContext):
     await delete_dialog_message(state)
     await state.finish()
     await send_temp_message(message.chat.id, f"✅ Добавлено: {data['meal_type']} — {message.text}", 2)
-    await message.answer("Главное меню", reply_markup=get_main_menu())
+    # Предложить добавить ещё
+    await ask_add_another(message, state)
 
 @dp.message_handler(state=DrinkStates.drink_type)
 async def drink_type(message: types.Message, state: FSMContext):
@@ -631,7 +676,8 @@ async def drink_amount(message: types.Message, state: FSMContext):
     await delete_dialog_message(state)
     await state.finish()
     await send_temp_message(message.chat.id, f"✅ Добавлено: {drink_type} — {amount}", 2)
-    await message.answer("Главное меню", reply_markup=get_main_menu())
+    # Предложить добавить ещё
+    await ask_add_another(message, state)
 
 # ========== ЗАМЕТКИ И НАПОМИНАНИЯ ==========
 @dp.message_handler(text="📝 Заметки и напоминания")
@@ -869,7 +915,7 @@ async def reminder_advance(message: types.Message, state: FSMContext):
 async def reminder_custom_time(message: types.Message, state: FSMContext):
     if message.text == "⬅️ Назад":
         await ReminderStates.advance.set()
-        await edit_or_send(state, message.chat.id, "⏰ Нужно ли напомнить заранее?", get_reminder_advance_buttons(), edit=True)
+        await edit_or_send(state, message.chat.id, "⏰ Выбери вариант доп. напоминания:", get_reminder_advance_buttons(), edit=True)
         return
     if message.text == "❌ Отмена":
         await safe_finish(state, message)
@@ -1706,6 +1752,7 @@ async def universal_back_handler(message: types.Message, state: FSMContext):
         "ExportStates:format",
         "ConverterStates:file",
         "ConverterStates:format",
+        "waiting_add_another",
     ]:
         await state.finish()
         await message.answer("Главное меню", reply_markup=get_main_menu())
@@ -1718,35 +1765,46 @@ async def universal_back_handler(message: types.Message, state: FSMContext):
 scheduler = None
 
 async def check_custom_reminders():
+    """Улучшенная проверка напоминаний (сон, чек-ины, итог дня)"""
     try:
         if not os.path.exists(REMINDER_FILE):
             return
         with open(REMINDER_FILE, "r") as f:
             all_data = json.load(f)
         now_utc = datetime.utcnow()
-        for user_id, settings_data in all_data.items():
-            user_id = int(user_id)
+        for user_id_str, settings_data in all_data.items():
+            user_id = int(user_id_str)
             tz = await db.get_user_timezone(user_id)
             if tz == 0:
                 continue
             user_time = now_utc + timedelta(hours=tz)
             current_time = user_time.strftime("%H:%M")
-            if settings_data["sleep"]["enabled"]:
-                if settings_data["sleep"]["time"] == current_time:
-                    if not await db.has_sleep_today(user_id):
-                        await bot.send_message(user_id, "🛌 Пора записать сон")
+            today_str = user_time.strftime("%Y-%m-%d")
+            
+            # Сон
+            if settings_data["sleep"]["enabled"] and settings_data["sleep"]["time"] == current_time:
+                if not await db.has_sleep_today(user_id):
+                    await bot.send_message(user_id, "🛌 Пора записать сон")
+                    logging.info(f"Напоминание о сне для {user_id} в {current_time}")
+            
+            # Чек-ины
             if settings_data["checkins"]["enabled"]:
                 for t in settings_data["checkins"]["times"]:
                     if t == current_time:
+                        # Проверяем, был ли уже чек-ин сегодня
                         checkins = await db._load_json(user_id, "checkins.json")
-                        today_str = user_time.strftime("%Y-%m-%d")
                         has_today_checkin = any(c.get("date") == today_str for c in checkins)
                         if not has_today_checkin:
                             await bot.send_message(user_id, "⚡️ Сделай чек-ин")
-            if settings_data["summary"]["enabled"]:
-                if settings_data["summary"]["time"] == current_time:
-                    if await db.get_target_date_for_summary(user_id):
-                        await bot.send_message(user_id, "📝 Не забудь подвести итог дня")
+                            logging.info(f"Напоминание о чек-ине для {user_id} в {current_time}")
+                        break  # Отправляем только одно напоминание в минуту
+            
+            # Итог дня
+            if settings_data["summary"]["enabled"] and settings_data["summary"]["time"] == current_time:
+                target_date = await db.get_target_date_for_summary(user_id)
+                if target_date and not await db.has_day_summary_for_date(user_id, target_date):
+                    await bot.send_message(user_id, "📝 Не забудь подвести итог дня")
+                    logging.info(f"Напоминание об итоге дня для {user_id} в {current_time}")
     except Exception as e:
         logging.error(f"Ошибка кастомных напоминаний: {e}")
 
