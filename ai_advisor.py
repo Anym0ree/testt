@@ -7,8 +7,8 @@ logger = logging.getLogger(__name__)
 class AIAdvisor:
     def __init__(self, api_key: str, model: str = "google/gemini-2.0-flash-exp:free", base_url: str = "https://openrouter.ai/api/v1"):
         self.api_key = api_key
-        self.model = model
-        self.base_url = base_url.rstrip('/') + '/chat/completions'
+        self.model = "google/gemini-2.0-flash-exp:free"
+        self.base_url = "https://openrouter.ai/api/v1/chat/completions"
         self.user_context = {}
         if api_key:
             logger.info(f"AIAdvisor инициализирован с ключом DeepSeek: {api_key[:5]}... (модель {self.model})")
