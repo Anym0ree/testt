@@ -5,14 +5,13 @@ from typing import Dict, Optional, List
 logger = logging.getLogger(__name__)
 
 class AIAdvisor:
-    def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile", base_url: str = "https://api.groq.com/openai/v1"):
+    def __init__(self, api_key: str, model: str = "deepseek-chat", base_url: str = "https://api.deepseek.com/v1"):
         self.api_key = api_key
-        self.model = "llama-3.1-8b-instant"   # используем более стабильную модель
-        self.base_url = base_url.rstrip('/') + '/chat/completions'  # формируем правильный URL
+        self.model = model
+        self.base_url = base_url.rstrip('/') + '/chat/completions'
         self.user_context = {}
-        # Дебаг: выведем первые 5 символов ключа (для проверки, что он читается)
         if api_key:
-            logger.info(f"AIAdvisor инициализирован с ключом: {api_key[:5]}... (модель {self.model})")
+            logger.info(f"AIAdvisor инициализирован с ключом DeepSeek: {api_key[:5]}... (модель {self.model})")
         else:
             logger.warning("AIAdvisor: API ключ не задан!")
 
@@ -28,30 +27,27 @@ class AIAdvisor:
     async def get_advice(self, user_id: int, user_question: Optional[str] = None, history: Optional[List[Dict]] = None) -> str:
         if not self.api_key:
             return ("❌ AI-модуль не настроен.\n"
-                    "Добавьте API-ключ Groq в config.py (переменная OPENAI_API_KEY).\n"
-                    "Получить ключ можно бесплатно на https://console.groq.com/ после регистрации.")
+                    "Добавьте API-ключ DeepSeek в config.py (переменная OPENAI_API_KEY).\n"
+                    "Получить ключ можно бесплатно на https://platform.deepseek.com/ после регистрации.")
 
         user_data = self.get_user_data(user_id)
         if not user_data:
             return "⚠️ Данные для анализа не найдены. Пожалуйста, сначала нажмите «🤖 AI-совет» из главного меню."
 
-        # Форматируем все данные (сон, чек-ины, итоги, заметки, еда, напитки, напоминания)
         user_summary = self._format_user_data(user_data)
 
-        # Новый, более живой и увлекательный промпт
         system_prompt = (
             "Ты — дружелюбный, остроумный и вдохновляющий AI-коуч. "
             "Твоя задача — анализировать данные пользователя (сон, чек-ины, итоги дня, заметки, еда, напитки, напоминания). "
             "Отвечай НЕ в формате сухого списка или википедии. Вместо этого:\n"
             "- Начни с короткого, тёплого приветствия.\n"
             "- Затем плавно перечисли основные аспекты (например: «Смотрю на твой сон…», «Энергия сегодня…», «Что касается эмоций…»).\n"
-            "- Обязательно добавь ОДИН интересный факт или наблюдение, связанный с данными (например: «Кстати, заметил, что когда ты спишь больше 7 часов, энергия на следующий день выше на 2 пункта» или «Ты чаще выбираешь эмоцию „спокойствие“ по вечерам — это здорово!»).\n"
+            "- Обязательно добавь ОДИН интересный факт или наблюдение, связанный с данными.\n"
             "- Дай 1–2 практичных, но лёгких совета.\n"
             "- Закончи тёплым напоминанием: «Я всегда рядом, чтобы поговорить. Можешь спросить меня о чём угодно — о привычках, питании, стрессе или просто поболтать. Что тебя волнует сегодня?»\n"
             "Будь живым, немного игривым, но не перегружай текст. Пиши на русском, короткими абзацами. Создавай ощущение уютного разговора."
         )
 
-        # Формируем сообщения для API
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Привет! Вот мои данные за последнее время:\n{user_summary}"}
@@ -69,7 +65,6 @@ class AIAdvisor:
             else:
                 messages.append({"role": "user", "content": "Расскажи, что интересного ты видишь в моих данных? Дай общий анализ и пару советов."})
 
-        # Отправляем запрос к Groq
         async with aiohttp.ClientSession() as session:
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
@@ -89,20 +84,16 @@ class AIAdvisor:
                         return result["choices"][0]["message"]["content"]
                     else:
                         error_text = await resp.text()
-                        logger.error(f"AI API error {resp.status}: {error_text}")
-                        # Попробуем извлечь более понятное сообщение
-                        if "403" in str(resp.status):
-                            return "⚠️ Доступ к AI-сервису запрещён (403). Возможно, IP-адрес вашего хостинга заблокирован Groq. Попробуйте позже или обратитесь в поддержку хостинга."
+                        logger.error(f"DeepSeek API error {resp.status}: {error_text}")
                         return f"⚠️ Ошибка AI-сервиса (код {resp.status}). Попробуйте позже."
             except Exception as e:
-                logger.error(f"AI request failed: {e}")
+                logger.error(f"DeepSeek request failed: {e}")
                 return "⚠️ Не удалось связаться с AI-сервисом. Проверьте интернет и настройки."
 
     def _format_user_data(self, data: Dict) -> str:
-        # ... (эта часть полностью без изменений, она у вас уже есть)
+        # ... (эта часть полностью без изменений, такая же как у вас)
         lines = []
 
-        # СОН
         sleep = data.get("sleep", [])
         if sleep:
             lines.append("🛌 СОН:")
@@ -114,7 +105,6 @@ class AIAdvisor:
         else:
             lines.append("🛌 Данные о сне отсутствуют.")
 
-        # ЧЕК-ИНЫ
         checkins = data.get("checkins", [])
         if checkins:
             lines.append("\n⚡️ ЧЕК-ИНЫ:")
@@ -126,7 +116,6 @@ class AIAdvisor:
         else:
             lines.append("\n⚡️ Чек-ины отсутствуют.")
 
-        # ИТОГИ ДНЯ
         summaries = data.get("day_summary", [])
         if summaries:
             lines.append("\n📝 ИТОГИ ДНЯ:")
@@ -139,7 +128,6 @@ class AIAdvisor:
         else:
             lines.append("\n📝 Итоги дня отсутствуют.")
 
-        # ЗАМЕТКИ
         notes = data.get("notes", [])
         if notes:
             lines.append("\n📋 ЗАМЕТКИ:")
@@ -148,7 +136,6 @@ class AIAdvisor:
         else:
             lines.append("\n📋 Заметки отсутствуют.")
 
-        # ЕДА
         food = data.get("food", [])
         if food:
             lines.append("\n🍽 ЕДА:")
@@ -157,7 +144,6 @@ class AIAdvisor:
         else:
             lines.append("\n🍽 Данные о еде отсутствуют.")
 
-        # НАПИТКИ
         drinks = data.get("drinks", [])
         if drinks:
             lines.append("\n🥤 НАПИТКИ:")
@@ -166,7 +152,6 @@ class AIAdvisor:
         else:
             lines.append("\n🥤 Данные о напитках отсутствуют.")
 
-        # НАПОМИНАНИЯ (только активные)
         reminders = data.get("reminders", [])
         active_reminders = [r for r in reminders if r.get('is_active')]
         if active_reminders:
