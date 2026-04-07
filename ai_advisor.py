@@ -5,13 +5,13 @@ from typing import Dict, Optional, List
 logger = logging.getLogger(__name__)
 
 class AIAdvisor:
-    def __init__(self, api_key: str, model: str = "google/gemini-2.0-flash-exp:free", base_url: str = "https://openrouter.ai/api/v1"):
+    def __init__(self, api_key: str, model: str = "openrouter/free", base_url: str = "https://openrouter.ai/api/v1"):
         self.api_key = api_key
-        self.model = "google/gemini-2.0-flash-exp:free"
-        self.base_url = "https://openrouter.ai/api/v1/chat/completions"
+        self.model = model
+        self.base_url = base_url.rstrip('/') + '/chat/completions'
         self.user_context = {}
         if api_key:
-            logger.info(f"AIAdvisor инициализирован с ключом DeepSeek: {api_key[:5]}... (модель {self.model})")
+            logger.info(f"AIAdvisor инициализирован с OpenRouter. Модель: {self.model}")
         else:
             logger.warning("AIAdvisor: API ключ не задан!")
 
@@ -27,8 +27,8 @@ class AIAdvisor:
     async def get_advice(self, user_id: int, user_question: Optional[str] = None, history: Optional[List[Dict]] = None) -> str:
         if not self.api_key:
             return ("❌ AI-модуль не настроен.\n"
-                    "Добавьте API-ключ DeepSeek в config.py (переменная OPENAI_API_KEY).\n"
-                    "Получить ключ можно бесплатно на https://platform.deepseek.com/ после регистрации.")
+                    "Добавьте API-ключ OpenRouter в config.py (переменная OPENAI_API_KEY).\n"
+                    "Получить ключ можно бесплатно на https://openrouter.ai/keys")
 
         user_data = self.get_user_data(user_id)
         if not user_data:
@@ -41,11 +41,11 @@ class AIAdvisor:
             "Твоя задача — анализировать данные пользователя (сон, чек-ины, итоги дня, заметки, еда, напитки, напоминания). "
             "Отвечай НЕ в формате сухого списка или википедии. Вместо этого:\n"
             "- Начни с короткого, тёплого приветствия.\n"
-            "- Затем плавно перечисли основные аспекты (например: «Смотрю на твой сон…», «Энергия сегодня…», «Что касается эмоций…»).\n"
+            "- Затем плавно перечисли основные аспекты.\n"
             "- Обязательно добавь ОДИН интересный факт или наблюдение, связанный с данными.\n"
             "- Дай 1–2 практичных, но лёгких совета.\n"
             "- Закончи тёплым напоминанием: «Я всегда рядом, чтобы поговорить. Можешь спросить меня о чём угодно — о привычках, питании, стрессе или просто поболтать. Что тебя волнует сегодня?»\n"
-            "Будь живым, немного игривым, но не перегружай текст. Пиши на русском, короткими абзацами. Создавай ощущение уютного разговора."
+            "Будь живым, немного игривым, но не перегружай текст. Пиши на русском, короткими абзацами."
         )
 
         messages = [
@@ -84,14 +84,14 @@ class AIAdvisor:
                         return result["choices"][0]["message"]["content"]
                     else:
                         error_text = await resp.text()
-                        logger.error(f"DeepSeek API error {resp.status}: {error_text}")
+                        logger.error(f"OpenRouter API error {resp.status}: {error_text}")
                         return f"⚠️ Ошибка AI-сервиса (код {resp.status}). Попробуйте позже."
             except Exception as e:
-                logger.error(f"DeepSeek request failed: {e}")
+                logger.error(f"OpenRouter request failed: {e}")
                 return "⚠️ Не удалось связаться с AI-сервисом. Проверьте интернет и настройки."
 
     def _format_user_data(self, data: Dict) -> str:
-        # ... (эта часть полностью без изменений, такая же как у вас)
+        # ... (ваша форматирующая функция, без изменений) ...
         lines = []
 
         sleep = data.get("sleep", [])
