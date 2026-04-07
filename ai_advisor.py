@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 class AIAdvisor:
     def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile", base_url: str = "https://api.groq.com/openai/v1/chat/completions"):
         self.api_key = api_key
-        self.model = model
+        self.model = "llama-3.1-8b-instant"
         self.base_url = base_url
         self.user_context = {}
 
