@@ -1,14 +1,19 @@
-import aiohttp
 import logging
-from typing import Dict, Optional, List
+from openai import AsyncOpenAI
+
+logger = logging.getLogger(__name__)
+
+
 
 class AIAdvisor:
-    def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile", base_url: str = "https://api.groq.com/openai/v1/chat/completions"):
-        self.api_key = api_key
-        self.model = model
-        self.base_url = base_url
-        self.user_context = {}
-
+    def __init__(self, api_key: str):
+        """Инициализация Groq клиента."""
+        # Указываем правильный адрес для Groq API
+        self.client = AsyncOpenAI(
+            base_url="https://api.groq.com/openai/v1",  # <-- Адрес Groq
+            api_key=api_key,
+        )
+        self.model = "llama-3.1-8b-instant"  # <-- Модель Groq
     def set_user_data(self, user_id: int, data: Dict):
         self.user_context[user_id] = data
 
@@ -18,126 +23,34 @@ class AIAdvisor:
     def clear_user_data(self, user_id: int):
         self.user_context.pop(user_id, None)
 
-    async def get_advice(self, user_id: int, user_question: Optional[str] = None, history: Optional[List[Dict]] = None) -> str:
-        if not self.api_key:
-            return ("❌ AI-модуль не настроен.\n"
-                    "Добавьте API-ключ Groq в config.py (переменная OPENAI_API_KEY).\n"
-                    "Получить ключ можно бесплатно на https://console.groq.com/ после регистрации.")
-
-        user_data = self.get_user_data(user_id)
-        if not user_data:
-            return "⚠️ Данные для анализа не найдены. Пожалуйста, сначала нажмите «🤖 AI-совет» из главного меню."
-
-        system_prompt = (
-            "Ты — дружелюбный и заботливый AI-коуч по саморазвитию. "
-            "На основе предоставленных данных о сне, энергии, стрессе, эмоциях, итогах дня, заметках, еде и напитках "
-            "давай пользователю конкретные, полезные советы для улучшения самочувствия, продуктивности и настроения. "
-            "Также можешь подмечать интересные факты из данных, задавать уточняющие вопросы, поддерживать диалог. "
-            "Отвечай структурированно, но живо, без излишней воды. Если данных недостаточно, предложи вести записи регулярнее."
-        )
-
-        user_summary = self._format_user_data(user_data)
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Вот мои данные за последнее время:\n{user_summary}"}
-        ]
-
-        if history:
-            new_messages = [messages[0]]
-            new_messages.extend(history)
-            if user_question:
-                new_messages.append({"role": "user", "content": user_question})
-            messages = new_messages
-        else:
-            if user_question:
-                messages.append({"role": "user", "content": user_question})
+    async def get_advice(self, user_id: int, question: str = None, history: list = None) -> str:
+        try:
+            if question is None:
+                user_data = self.get_user_data(user_id)
+                prompt = f"Вот данные пользователя за последние дни:\n{user_data}\n\nНа основе этих данных дай общий совет по улучшению самочувствия и продуктивности."
+                messages = [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt}
+                ]
             else:
-                messages.append({"role": "user", "content": "Пожалуйста, дай общий анализ моего состояния и практические советы."})
+                if history is None:
+                    user_data = self.get_user_data(user_id)
+                    prompt = f"Вот данные пользователя за последние дни:\n{user_data}\n\nВопрос пользователя: {question}"
+                    messages = [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt}
+                    ]
+                else:
+                    messages = history
+                    messages.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
 
-        async with aiohttp.ClientSession() as session:
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": self.model,
-                "messages": messages,
-                "temperature": 0.7,
-                "max_tokens": 1000
-            }
-            try:
-                async with session.post(self.base_url, headers=headers, json=payload) as resp:
-                    if resp.status == 200:
-                        result = await resp.json()
-                        return result["choices"][0]["message"]["content"]
-                    else:
-                        error_text = await resp.text()
-                        logging.error(f"AI API error {resp.status}: {error_text}")
-                        return f"⚠️ Ошибка AI-сервиса (код {resp.status}). Попробуйте позже."
-            except Exception as e:
-                logging.error(f"AI request failed: {e}")
-                return "⚠️ Не удалось связаться с AI-сервисом. Проверьте интернет и настройки."
-
-    def _format_user_data(self, data: Dict) -> str:
-        lines = []
-
-        sleep = data.get("sleep", [])
-        if sleep:
-            lines.append("📊 СОН (последние записи):")
-            for s in sleep[-10:]:
-                lines.append(f"  • {s.get('date')}: лёг в {s.get('bed_time')}, встал в {s.get('wake_time')}, качество {s.get('quality')}/10, ночные пробуждения: {'да' if s.get('woke_night') else 'нет'}")
-        else:
-            lines.append("📊 Данные о сне отсутствуют.")
-
-        checkins = data.get("checkins", [])
-        if checkins:
-            lines.append("\n⚡️ ЧЕК-ИНЫ (последние):")
-            for c in checkins[-10:]:
-                emotions = ', '.join(c.get('emotions', [])) or 'не указаны'
-                lines.append(f"  • {c.get('date')} {c.get('time')}: энергия {c.get('energy')}/10, стресс {c.get('stress')}/10, эмоции: {emotions}")
-                if c.get('note'):
-                    lines.append(f"       заметка: {c['note'][:80]}")
-        else:
-            lines.append("\n⚡️ Чек-ины отсутствуют.")
-
-        summaries = data.get("day_summary", [])
-        if summaries:
-            lines.append("\n📝 ИТОГИ ДНЯ (последние):")
-            for s in summaries[-10:]:
-                lines.append(f"  • {s.get('date')}: оценка {s.get('score')}/10, лучшее: {s.get('best') or '—'}, сложное: {s.get('worst') or '—'}")
-                if s.get('note'):
-                    lines.append(f"       заметка: {s['note'][:80]}")
-        else:
-            lines.append("\n📝 Итоги дня отсутствуют.")
-
-        notes = data.get("notes", [])
-        if notes:
-            lines.append("\n📋 ЗАМЕТКИ (последние):")
-            for n in notes[-7:]:
-                lines.append(f"  • {n.get('date')}: {n.get('text')[:100]}{'...' if len(n.get('text', '')) > 100 else ''}")
-
-        food = data.get("food", [])
-        if food:
-            lines.append("\n🍽 ЕДА (последние записи):")
-            for f in food[-10:]:
-                lines.append(f"  • {f.get('date')} {f.get('time')}: {f.get('meal_type')} — {f.get('food_text')[:80]}")
-        else:
-            lines.append("\n🍽 Данные о еде отсутствуют.")
-
-        drinks = data.get("drinks", [])
-        if drinks:
-            lines.append("\n🥤 НАПИТКИ (последние записи):")
-            for d in drinks[-10:]:
-                lines.append(f"  • {d.get('date')} {d.get('time')}: {d.get('drink_type')} — {d.get('amount')}")
-        else:
-            lines.append("\n🥤 Данные о напитках отсутствуют.")
-
-        reminders = data.get("reminders", [])
-        active_reminders = [r for r in reminders if r.get('is_active')]
-        if active_reminders:
-            lines.append("\n⏰ АКТИВНЫЕ НАПОМИНАНИЯ:")
-            for r in active_reminders[-5:]:
-                lines.append(f"  • {r.get('date')} {r.get('time')}: {r.get('text')[:70]}")
-
-        return "\n".join(lines)
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=1000,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"Ошибка Groq API: {e}")
+            return f"⚠️ Ошибка AI-сервиса ({e}). Попробуйте позже."
