@@ -1,5 +1,5 @@
-import aiohttp
 import logging
+import aiohttp
 from typing import Dict, Optional, List
 
 logger = logging.getLogger(__name__)
@@ -30,10 +30,8 @@ class AIAdvisor:
         if not user_data:
             return "⚠️ Данные для анализа не найдены. Пожалуйста, сначала нажмите «🤖 AI-совет» из главного меню."
 
-        # Форматируем все данные (сон, чек-ины, итоги, заметки, еда, напитки, напоминания)
         user_summary = self._format_user_data(user_data)
 
-        # Новый, более живой и увлекательный промпт
         system_prompt = (
             "Ты — дружелюбный, остроумный и вдохновляющий AI-коуч. "
             "Твоя задача — анализировать данные пользователя (сон, чек-ины, итоги дня, заметки, еда, напитки, напоминания). "
@@ -46,15 +44,13 @@ class AIAdvisor:
             "Будь живым, немного игривым, но не перегружай текст. Пиши на русском, короткими абзацами. Создавай ощущение уютного разговора."
         )
 
-        # Формируем сообщения для API
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Привет! Вот мои данные за последнее время:\n{user_summary}"}
         ]
 
         if history:
-            # Добавляем историю диалога (без повторного добавления системного промпта)
-            new_messages = [messages[0]]  # system
+            new_messages = [messages[0]]
             new_messages.extend(history)
             if user_question:
                 new_messages.append({"role": "user", "content": user_question})
@@ -65,7 +61,6 @@ class AIAdvisor:
             else:
                 messages.append({"role": "user", "content": "Расскажи, что интересного ты видишь в моих данных? Дай общий анализ и пару советов."})
 
-        # Отправляем запрос к Groq
         async with aiohttp.ClientSession() as session:
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
@@ -74,7 +69,7 @@ class AIAdvisor:
             payload = {
                 "model": self.model,
                 "messages": messages,
-                "temperature": 0.8,      # чуть выше для креативности
+                "temperature": 0.8,
                 "max_tokens": 1200
             }
             try:
@@ -91,10 +86,8 @@ class AIAdvisor:
                 return "⚠️ Не удалось связаться с AI-сервисом. Проверьте интернет и настройки."
 
     def _format_user_data(self, data: Dict) -> str:
-        """Форматирует все данные пользователя в читаемый текст."""
         lines = []
 
-        # СОН
         sleep = data.get("sleep", [])
         if sleep:
             lines.append("🛌 СОН:")
@@ -106,10 +99,9 @@ class AIAdvisor:
         else:
             lines.append("🛌 Данные о сне отсутствуют.")
 
-        # ЧЕК-ИНЫ
         checkins = data.get("checkins", [])
         if checkins:
-            lines.append("\n⚡️ ЧЕК-ИНЫ (энергия, стресс, эмоции):")
+            lines.append("\n⚡️ ЧЕК-ИНЫ:")
             for c in checkins[-10:]:
                 emotions = ', '.join(c.get('emotions', [])) or 'не указаны'
                 lines.append(f"  • {c.get('date')} {c.get('time')}: энергия {c.get('energy')}/10, стресс {c.get('stress')}/10, эмоции: {emotions}")
@@ -118,7 +110,6 @@ class AIAdvisor:
         else:
             lines.append("\n⚡️ Чек-ины отсутствуют.")
 
-        # ИТОГИ ДНЯ
         summaries = data.get("day_summary", [])
         if summaries:
             lines.append("\n📝 ИТОГИ ДНЯ:")
@@ -131,7 +122,6 @@ class AIAdvisor:
         else:
             lines.append("\n📝 Итоги дня отсутствуют.")
 
-        # ЗАМЕТКИ (все, не только последние, но ограничим 15)
         notes = data.get("notes", [])
         if notes:
             lines.append("\n📋 ЗАМЕТКИ:")
@@ -140,7 +130,6 @@ class AIAdvisor:
         else:
             lines.append("\n📋 Заметки отсутствуют.")
 
-        # ЕДА
         food = data.get("food", [])
         if food:
             lines.append("\n🍽 ЕДА:")
@@ -149,7 +138,6 @@ class AIAdvisor:
         else:
             lines.append("\n🍽 Данные о еде отсутствуют.")
 
-        # НАПИТКИ
         drinks = data.get("drinks", [])
         if drinks:
             lines.append("\n🥤 НАПИТКИ:")
@@ -158,7 +146,6 @@ class AIAdvisor:
         else:
             lines.append("\n🥤 Данные о напитках отсутствуют.")
 
-        # НАПОМИНАНИЯ (только активные)
         reminders = data.get("reminders", [])
         active_reminders = [r for r in reminders if r.get('is_active')]
         if active_reminders:
