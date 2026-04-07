@@ -5,11 +5,16 @@ from typing import Dict, Optional, List
 logger = logging.getLogger(__name__)
 
 class AIAdvisor:
-    def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile", base_url: str = "https://api.groq.com/openai/v1/chat/completions"):
+    def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile", base_url: str = "https://api.groq.com/openai/v1"):
         self.api_key = api_key
-        self.model = "llama-3.1-8b-instant"
-        self.base_url = base_url
+        self.model = "llama-3.1-8b-instant"   # используем более стабильную модель
+        self.base_url = base_url.rstrip('/') + '/chat/completions'  # формируем правильный URL
         self.user_context = {}
+        # Дебаг: выведем первые 5 символов ключа (для проверки, что он читается)
+        if api_key:
+            logger.info(f"AIAdvisor инициализирован с ключом: {api_key[:5]}... (модель {self.model})")
+        else:
+            logger.warning("AIAdvisor: API ключ не задан!")
 
     def set_user_data(self, user_id: int, data: Dict):
         self.user_context[user_id] = data
@@ -74,7 +79,7 @@ class AIAdvisor:
             payload = {
                 "model": self.model,
                 "messages": messages,
-                "temperature": 0.8,      # чуть выше для креативности
+                "temperature": 0.8,
                 "max_tokens": 1200
             }
             try:
@@ -85,13 +90,16 @@ class AIAdvisor:
                     else:
                         error_text = await resp.text()
                         logger.error(f"AI API error {resp.status}: {error_text}")
+                        # Попробуем извлечь более понятное сообщение
+                        if "403" in str(resp.status):
+                            return "⚠️ Доступ к AI-сервису запрещён (403). Возможно, IP-адрес вашего хостинга заблокирован Groq. Попробуйте позже или обратитесь в поддержку хостинга."
                         return f"⚠️ Ошибка AI-сервиса (код {resp.status}). Попробуйте позже."
             except Exception as e:
                 logger.error(f"AI request failed: {e}")
                 return "⚠️ Не удалось связаться с AI-сервисом. Проверьте интернет и настройки."
 
     def _format_user_data(self, data: Dict) -> str:
-        # (Эта часть кода остаётся без изменений. Она правильно форматирует все ваши данные.)
+        # ... (эта часть полностью без изменений, она у вас уже есть)
         lines = []
 
         # СОН
