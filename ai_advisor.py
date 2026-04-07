@@ -5,7 +5,7 @@ from typing import Dict, Optional, List
 logger = logging.getLogger(__name__)
 
 class AIAdvisor:
-    def __init__(self, api_key: str, model: str = "deepseek-chat", base_url: str = "https://api.deepseek.com/v1"):
+    def __init__(self, api_key: str, model: str = "google/gemini-2.0-flash-exp:free", base_url: str = "https://openrouter.ai/api/v1"):
         self.api_key = api_key
         self.model = model
         self.base_url = base_url.rstrip('/') + '/chat/completions'
